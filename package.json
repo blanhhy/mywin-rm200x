@@ -1,0 +1,27 @@
+{
+  "name": "mywin-rm200x",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "RPG Maker 200x 自定义 message 窗口制作器",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "upng-js": "^2.1.0",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/upng-js": "^2.1.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}
