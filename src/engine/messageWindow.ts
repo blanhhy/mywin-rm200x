@@ -7,8 +7,7 @@ import {
   type LoadedImage,
 } from '../types';
 import { SystemImageRenderer, InferredImageRenderer, type WindowRenderer } from './systemImage';
-import { measureTextBounds } from './textRenderer';
-import { renderBitmapText, type BitmapFontId } from './bitmapFontRenderer';
+import { renderBitmapText, measureBitmapTextBounds, type BitmapFontId } from './bitmapFontRenderer';
 
 /** 渲染结果 */
 export interface RenderResult {
@@ -28,7 +27,7 @@ export function computeWindowSize(config: MessageWindowConfig): { width: number;
     };
   }
   // 自适应或数值
-  const textBounds = measureTextBounds(config.text);
+  const textBounds = measureBitmapTextBounds(config.text, inferDefaultFontId());
   const hasFaceSpace = config.faceMode === 'face';
   const faceWidth = hasFaceSpace
     ? config.facePosition === 'left'

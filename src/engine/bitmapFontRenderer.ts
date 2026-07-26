@@ -48,18 +48,26 @@ function findGlyphIndex(font: BitmapFontData, code: number): number {
 
 /**
  * 字体回退链
- * 与 EasyRPG 的 find_*_glyph 函数一致
+ * 与 EasyRPG 的 find_*_glyph 函数完全一致（font.cpp:74-132）
  *
- * 每个字体在找不到字形时，会依次尝试回退链中的后续字体。
- * WQY 主要覆盖中文字符，需要回退到西文字体（ttyp0）以支持英文。
+ * EasyRPG 回退层级：
+ *   find_fallback_glyph: wqy → 替换字符（最终兜底）
+ *   find_baekmuk_glyph: baekmuk → fallback(wqy)
+ *   find_gothic_glyph: (CP936 先 wqy) → Shinonome Gothic → baekmuk → fallback(wqy)
+ *   find_mincho_glyph: (CP936 先 wqy) → Shinonome Mincho → gothic
+ *   find_rmg2000_glyph: rmg2000 → ttyp0 → mincho
+ *   find_ttyp0_glyph: ttyp0 → gothic
+ *
+ * 注意：wqy 不是放在最前面就是放在最后（作为 fallback），不会出现在中间。
+ * baekmuk 覆盖一些特殊符号（如罗马数字 Ⅰ-Ⅹ），是 wqy 的重要补充。
  */
 const FALLBACK_CHAIN: Record<BitmapFontId, BitmapFontId[]> = {
-  rmg2000: ['rmg2000', 'ttyp0', 'shinonomeMincho', 'shinonomeGothic', 'wqy'],
-  ttyp0: ['ttyp0', 'shinonomeGothic', 'wqy'],
-  shinonomeGothic: ['shinonomeGothic', 'baekmuk', 'wqy', 'ttyp0'],
-  shinonomeMincho: ['shinonomeMincho', 'shinonomeGothic', 'wqy', 'ttyp0'],
-  wqy: ['wqy', 'ttyp0', 'shinonomeGothic'],
-  baekmuk: ['baekmuk', 'wqy', 'ttyp0'],
+  rmg2000: ['rmg2000', 'ttyp0', 'shinonomeMincho', 'shinonomeGothic', 'baekmuk', 'wqy'],
+  ttyp0: ['ttyp0', 'shinonomeGothic', 'baekmuk', 'wqy'],
+  shinonomeGothic: ['shinonomeGothic', 'baekmuk', 'wqy'],
+  shinonomeMincho: ['shinonomeMincho', 'shinonomeGothic', 'baekmuk', 'wqy'],
+  wqy: ['wqy', 'shinonomeGothic', 'baekmuk'],
+  baekmuk: ['baekmuk', 'wqy'],
 };
 
 /** 字形查找结果 */
@@ -163,26 +171,37 @@ function getBitmapGlyph(
   return canvas;
 }
 
-/** 判断字符是否为全角（与 textRenderer 一致） */
-function isFullWidthChar(ch: string): boolean {
-  const code = ch.codePointAt(0);
-  if (code === undefined) return false;
-  if (code < 0x80) return false;
-  if (code >= 0x4e00 && code <= 0x9fff) return true;
-  if (code >= 0x3400 && code <= 0x4dbf) return true;
-  if (code >= 0xf900 && code <= 0xfaff) return true;
-  if (code >= 0x3040 && code <= 0x309f) return true;
-  if (code >= 0x30a0 && code <= 0x30ff) return true;
-  if (code >= 0xac00 && code <= 0xd7af) return true;
-  if (code >= 0xff01 && code <= 0xff5e) return true;
-  if (code >= 0x3000 && code <= 0x303f) return true;
-  if (code >= 0xff00 && code <= 0xffef) return true;
-  return false;
-}
-
 /** 清空位图字形缓存 */
 export function clearBitmapGlyphCache(): void {
   glyphCache.clear();
+}
+
+/**
+ * 计算位图字体文本绘制后的总尺寸（用于自适应窗口大小）
+ * 与 renderBitmapText 使用相同的字形宽度逻辑（基于 findGlyph 的实际 isFull）
+ */
+export function measureBitmapTextBounds(
+  text: string,
+  fontId: BitmapFontId,
+  lineHeight: number = RPG_CONSTANTS.LINE_HEIGHT,
+): { width: number; height: number } {
+  const lines = parseText(text, 0);
+  let maxW = 0;
+  for (const line of lines) {
+    let w = 0;
+    for (const seg of line.segments) {
+      for (const ch of seg.text) {
+        const code = ch.codePointAt(0) || 0;
+        const { isFull } = findGlyph(fontId, code);
+        w += isFull ? RPG_CONSTANTS.FULL_WIDTH : RPG_CONSTANTS.HALF_WIDTH;
+      }
+    }
+    if (w > maxW) maxW = w;
+  }
+  return {
+    width: maxW,
+    height: lines.length * lineHeight,
+  };
 }
 
 export interface BitmapTextRenderOptions {
@@ -238,13 +257,12 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
     for (const seg of line.segments) {
       const srcPos = getColorSrcPos(seg.color);
       for (const ch of seg.text) {
-        const fw = isFullWidthChar(ch);
-        const w = fw ? RPG_CONSTANTS.FULL_WIDTH : RPG_CONSTANTS.HALF_WIDTH;
+        const mainGlyph = getBitmapGlyph(ch, srcPos.x, srcPos.y, systemCanvas, fontId);
+        const w = mainGlyph.width; // 字形实际宽度（全角 12px / 半角 6px）
         if (drawShadow) {
           const shadowGlyph = getBitmapGlyph(ch, shadowSrcPos.x, shadowSrcPos.y, systemCanvas, fontId);
           ctx.drawImage(shadowGlyph, curX + 1, lineY - baseYOffset + 1);
         }
-        const mainGlyph = getBitmapGlyph(ch, srcPos.x, srcPos.y, systemCanvas, fontId);
         ctx.drawImage(mainGlyph, curX, lineY - baseYOffset);
         curX += w;
       }
