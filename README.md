@@ -11,6 +11,8 @@ npm install
 npm run dev
 ```
 
+也有一个 [在线示例](https://blanhhy.github.io/mywin-rm200x/)
+
 ### 致谢
 
 [EasyRPG Player](https://github.com/EasyRPG/Player)
