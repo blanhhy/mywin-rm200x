@@ -135,8 +135,9 @@ function getBitmapGlyph(
   srcY: number,
   systemCanvas: HTMLCanvasElement,
   fontId: BitmapFontId,
+  rendererId: number,
 ): HTMLCanvasElement {
-  const cacheKey = `${ch}|${srcX},${srcY}|${fontId}`;
+  const cacheKey = `${ch}|${srcX},${srcY}|${fontId}|${rendererId}`;
   const cached = glyphCache.get(cacheKey);
   if (cached) return cached;
 
@@ -226,6 +227,8 @@ export interface BitmapTextRenderOptions {
   defaultColor: number;
   /** System 图处理后的 canvas（用于按像素位置取色） */
   systemCanvas: HTMLCanvasElement;
+  /** SystemImageRenderer 的唯一 ID（用于缓存键） */
+  rendererId: number;
   /** 根据颜色索引返回色块在 System 图中的取样起点 */
   getColorSrcPos: (index: number) => { x: number; y: number };
   /** 阴影色块在 System 图中的取样起点 */
@@ -251,6 +254,7 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
     y,
     defaultColor,
     systemCanvas,
+    rendererId,
     getColorSrcPos,
     shadowSrcPos,
     drawShadow = true,
@@ -269,10 +273,10 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
     for (const seg of line.segments) {
       const srcPos = getColorSrcPos(seg.color);
       for (const ch of seg.text) {
-        const mainGlyph = getBitmapGlyph(ch, srcPos.x, srcPos.y, systemCanvas, fontId);
+        const mainGlyph = getBitmapGlyph(ch, srcPos.x, srcPos.y, systemCanvas, fontId, rendererId);
         const w = mainGlyph.width; // 字形实际宽度（全角 12px / 半角 6px）
         if (drawShadow) {
-          const shadowGlyph = getBitmapGlyph(ch, shadowSrcPos.x, shadowSrcPos.y, systemCanvas, fontId);
+          const shadowGlyph = getBitmapGlyph(ch, shadowSrcPos.x, shadowSrcPos.y, systemCanvas, fontId, rendererId);
           ctx.drawImage(shadowGlyph, curX + 1, lineY + 1);
         }
         ctx.drawImage(mainGlyph, curX, lineY);

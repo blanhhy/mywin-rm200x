@@ -10,7 +10,10 @@ type Rect = { x: number; y: number; w: number; h: number };
 
 const BORDER_RECTS = RPG_CONSTANTS.BORDER;
 
+let rendererIdCounter = 0;
+
 export class SystemImageRenderer {
+  readonly id: number;
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private colors: string[] = [];
@@ -20,6 +23,7 @@ export class SystemImageRenderer {
   private tileCache: Map<string, HTMLCanvasElement> = new Map();
 
   constructor(source: LoadedImage, transparentColor: string = '#000000') {
+    this.id = ++rendererIdCounter;
     this.transparentRGB = parseColor(transparentColor);
     this.canvas = document.createElement('canvas');
     this.canvas.width = RPG_CONSTANTS.SYSTEM_WIDTH;

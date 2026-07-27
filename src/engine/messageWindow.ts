@@ -221,6 +221,7 @@ export function renderMessageWindow(config: MessageWindowConfig): RenderResult {
       y: textY,
       defaultColor: config.defaultColor,
       systemCanvas: colorRenderer.getProcessedCanvas(),
+      rendererId: colorRenderer.id,
       getColorSrcPos: (idx) => colorRenderer.getColorSrcPosition(idx),
       shadowSrcPos: colorRenderer.getShadowSrcPosition(),
       fontId: inferDefaultFontId(),
