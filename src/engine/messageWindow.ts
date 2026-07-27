@@ -53,9 +53,9 @@ export function computeWindowSize(config: MessageWindowConfig): { width: number;
     height = config.height;
   }
 
-  // 最小尺寸
-  width = Math.max(width, 16);
-  height = Math.max(height, 16);
+  // 最小尺寸（兜底用，防止极端配置出现 0 尺寸）
+  width = Math.max(width, 4);
+  height = Math.max(height, 4);
   return { width, height };
 }
 

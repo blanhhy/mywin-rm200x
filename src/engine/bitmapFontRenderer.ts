@@ -198,9 +198,11 @@ export function measureBitmapTextBounds(
     }
     if (w > maxW) maxW = w;
   }
+  // 最后一行只需 FONT_HEIGHT（12px），不需整行 lineHeight（16px）的行间距
+  // 这样自适应高度在 padding=0 时文字能紧贴边缘，无尾部空白
   return {
     width: maxW,
-    height: lines.length * lineHeight,
+    height: (lines.length - 1) * lineHeight + RPG_CONSTANTS.FONT_HEIGHT,
   };
 }
 
@@ -218,13 +220,12 @@ export interface BitmapTextRenderOptions {
   shadowSrcPos: { x: number; y: number };
   drawShadow?: boolean;
   lineHeight?: number;
-  baseYOffset?: number;
   fontId: BitmapFontId;
 }
 
 /**
  * 绘制位图字体文字
- * 每行高度 16px，字形高度 12px，行内 y 偏移 2px
+ * 每行高度 16px，字形高度 12px
  * 阴影：右下偏移 1px
  *
  * 着色逻辑与 EasyRPG Font::RenderImpl 一致：
@@ -242,7 +243,6 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
     shadowSrcPos,
     drawShadow = true,
     lineHeight = RPG_CONSTANTS.LINE_HEIGHT,
-    baseYOffset = RPG_CONSTANTS.TEXT_START_Y,
     fontId,
   } = opts;
 
@@ -252,7 +252,7 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
 
   for (let li = 0; li < lines.length; li++) {
     const line = lines[li];
-    const lineY = y + li * lineHeight + baseYOffset;
+    const lineY = y + li * lineHeight;
     let curX = x;
     for (const seg of line.segments) {
       const srcPos = getColorSrcPos(seg.color);
@@ -261,9 +261,9 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
         const w = mainGlyph.width; // 字形实际宽度（全角 12px / 半角 6px）
         if (drawShadow) {
           const shadowGlyph = getBitmapGlyph(ch, shadowSrcPos.x, shadowSrcPos.y, systemCanvas, fontId);
-          ctx.drawImage(shadowGlyph, curX + 1, lineY - baseYOffset + 1);
+          ctx.drawImage(shadowGlyph, curX + 1, lineY + 1);
         }
-        ctx.drawImage(mainGlyph, curX, lineY - baseYOffset);
+        ctx.drawImage(mainGlyph, curX, lineY);
         curX += w;
       }
     }
