@@ -23,6 +23,7 @@ import { useAssets } from '../../hooks/useAssets';
 import { loadImage } from '../../engine/messageWindow';
 import { inferTransparentColorFromBuffer, inferTransparentColor } from '../../engine/transparentColorInference';
 import { RPG_CONSTANTS, type LoadedImage } from '../../types';
+import { useStore } from '../../store/useStore';
 
 export interface SystemPickerValue {
   name: string;
@@ -51,11 +52,13 @@ export default function SystemPicker({
   title = '选择 System 图',
 }: SystemPickerProps) {
   const assets = useAssets('System');
+  const workspace = useStore((s) => s.workspace);
+  const saveAssetToWorkspace = useStore((s) => s.saveAssetToWorkspace);
+  const removeAssetFromWorkspace = useStore((s) => s.removeAssetFromWorkspace);
   const [selectedName, setSelectedName] = useState<string | null>(currentName);
   const [loadedImage, setLoadedImage] = useState<LoadedImage | null>(null);
   const [transparentColor, setTransparentColor] = useState(currentTransparentColor);
   const [loadingError, setLoadingError] = useState<string | null>(null);
-  // 控制"新增素材"文件输入
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 当模态框打开或 currentName 变化时同步
@@ -104,16 +107,29 @@ export default function SystemPicker({
 
   const handleAddAsset = async (file: File) => {
     try {
-      const entry = await addUserAsset('System', file);
-      setSelectedName(entry.name);
+      if (workspace) {
+        const entry = await saveAssetToWorkspace('System', file);
+        if (entry) {
+          setSelectedName(entry.name);
+        } else {
+          setLoadingError('保存到工作区失败');
+        }
+      } else {
+        const entry = await addUserAsset('System', file);
+        setSelectedName(entry.name);
+      }
     } catch (e) {
       setLoadingError(`导入失败：${e}`);
     }
   };
 
-  const handleRemoveUserAsset = (name: string) => {
-    if (!confirm(`确定要删除用户素材"${name}"吗？`)) return;
-    removeUserAsset('System', name);
+  const handleRemoveAsset = async (name: string, source: string) => {
+    if (!confirm(`确定要删除素材"${name}"吗？`)) return;
+    if (source === 'workspace') {
+      await removeAssetFromWorkspace('System', name);
+    } else {
+      removeUserAsset('System', name);
+    }
     if (selectedName === name) {
       setSelectedName(null);
       setLoadedImage(null);
@@ -212,17 +228,27 @@ export default function SystemPicker({
             key={`${a.source}:${a.name}`}
             className={`asset-item ${selectedName === a.name ? 'selected' : ''}`}
             onClick={() => setSelectedName(a.name)}
-            title={a.source === 'builtin' ? '内置 RTP' : '用户导入'}
+            title={
+              a.source === 'builtin'
+                ? '内置 RTP'
+                : a.source === 'workspace'
+                  ? '工作区素材'
+                  : '用户导入'
+            }
           >
             <span className="asset-name">{a.name}</span>
-            <span className="asset-tag">{a.source === 'builtin' ? 'RTP' : 'USER'}</span>
-            {a.source === 'user' && (
+            <span
+              className={`asset-tag ${a.source === 'workspace' ? 'tag-workspace' : ''}`}
+            >
+              {a.source === 'builtin' ? 'RTP' : a.source === 'workspace' ? 'WORK' : 'USER'}
+            </span>
+            {a.source !== 'builtin' && (
               <button
                 className="modal-close"
                 style={{ width: 18, height: 18, fontSize: 13, marginLeft: 4 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleRemoveUserAsset(a.name);
+                  handleRemoveAsset(a.name, a.source);
                 }}
                 title="删除"
               >

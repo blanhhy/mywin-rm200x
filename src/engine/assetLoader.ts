@@ -1,8 +1,9 @@
 // RTP 资源加载器与运行时素材库
 //
-// 资源分两类：
+// 资源分三类：
 //   1. built-in RTP 素材：随应用打包，来自 assets/RTP/{System,FaceSet}/*.png
 //   2. user-added 素材：用户在运行时通过模态框"新增素材"导入，持久化到 localStorage
+//   3. workspace 素材：来自工作区文件夹的 System/Faceset 目录
 //
 // 选择器组件通过 subscribe() 监听列表变化，无需手动刷新。
 
@@ -11,20 +12,18 @@ export type AssetCategory = 'System' | 'FaceSet';
 export interface AssetEntry {
   /** 不含扩展名的素材名，如 "System" / "Royal" / "my-import" */
   name: string;
-  /** 相对路径（仅 built-in 有效），如 "RTP/System/System.png" */
+  /** 相对路径（built-in / workspace 有效），如 "RTP/System/System.png" */
   path: string;
   /** 可直接用于 img.src 的 URL */
   url: string;
   category: AssetCategory;
-  /** 来源：built-in 随应用打包；user 由用户导入（持久化） */
-  source: 'builtin' | 'user';
-  /** 用户素材的 dataURL（仅 source='user' 时有效，用于持久化） */
+  /** 来源：built-in 随应用打包；user 由用户导入（持久化）；workspace 来自工作区文件夹 */
+  source: 'builtin' | 'user' | 'workspace';
+  /** 用户/工作区素材的 dataURL（用于持久化） */
   dataUrl?: string;
 }
 
 // === 构建时收集 built-in RTP 素材 ===
-// 路径相对于本文件 src/engine/assetLoader.ts：
-//   ../../ → 项目根，再进入 assets/RTP/...
 const systemModules = import.meta.glob('../../assets/RTP/System/*.{png,PNG}', {
   eager: true,
   query: '?url',
@@ -45,7 +44,6 @@ function toBuiltinEntries(
     .map(([path, url]) => {
       const fileName = path.split('/').pop() ?? '';
       const name = fileName.replace(/\.[^.]+$/, '');
-      // path 形如 '../../assets/RTP/System/System.png'，去掉前导 '../' 序列得到 'assets/...'
       const relPath = path.replace(/^(?:\.\.\/)+/, '');
       return { name, path: relPath, url, category, source: 'builtin' as const };
     })
@@ -92,7 +90,6 @@ function saveUserAssets(category: AssetCategory, assets: AssetEntry[]): void {
   try {
     localStorage.setItem(key, JSON.stringify(arr));
   } catch (e) {
-    // localStorage 配额可能不足（图片较大）
     console.warn('保存用户素材失败：', e);
   }
 }
@@ -100,6 +97,10 @@ function saveUserAssets(category: AssetCategory, assets: AssetEntry[]): void {
 // === 运行时素材库（可订阅） ===
 let userSystemAssets: AssetEntry[] = loadUserAssets('System');
 let userFaceSetAssets: AssetEntry[] = loadUserAssets('FaceSet');
+
+// 工作区素材（由 workspace 引擎加载后通过 setWorkspaceAssets 设置）
+let workspaceSystemAssets: AssetEntry[] = [];
+let workspaceFaceSetAssets: AssetEntry[] = [];
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
@@ -109,10 +110,8 @@ function notifyChange(): void {
 }
 
 function makeUniqueName(base: string, existing: AssetEntry[]): string {
-  // 去除扩展名
   const clean = base.replace(/\.[^.]+$/, '').replace(/[^\w\u4e00-\u9fa5\-_]/g, '_');
   if (!existing.some((a) => a.name === clean)) return clean;
-  // 加数字后缀
   for (let i = 2; ; i++) {
     const candidate = `${clean}_${i}`;
     if (!existing.some((a) => a.name === candidate)) return candidate;
@@ -131,10 +130,11 @@ function readFileAsDataURL(file: File): Promise<string> {
 
 // === 公开 API ===
 
-/** 列出指定类别的全部素材（built-in + user） */
+/** 列出指定类别的全部素材（built-in + user + workspace） */
 export function listAssets(category: AssetCategory): AssetEntry[] {
   const user = category === 'System' ? userSystemAssets : userFaceSetAssets;
-  return [...BUILTIN_SYSTEM_OR_FACESET(category), ...user];
+  const workspace = category === 'System' ? workspaceSystemAssets : workspaceFaceSetAssets;
+  return [...BUILTIN_SYSTEM_OR_FACESET(category), ...workspace, ...user];
 }
 
 function BUILTIN_SYSTEM_OR_FACESET(category: AssetCategory): AssetEntry[] {
@@ -155,19 +155,18 @@ export function getAssetUrl(category: AssetCategory, name: string): string | nul
   return findAsset(category, name)?.url ?? null;
 }
 
-/** 列出所有 RTP System 素材名 */
+/** 列出所有 System 素材名 */
 export function listSystemAssets(): string[] {
   return listAssets('System').map((a) => a.name);
 }
 
-/** 列出所有 RTP FaceSet 素材名 */
+/** 列出所有 FaceSet 素材名 */
 export function listFaceSetAssets(): string[] {
   return listAssets('FaceSet').map((a) => a.name);
 }
 
 /**
  * 新增用户素材
- * @returns 新增的 AssetEntry；若名称冲突会自动加数字后缀
  */
 export async function addUserAsset(
   category: AssetCategory,
@@ -195,7 +194,7 @@ export async function addUserAsset(
   return entry;
 }
 
-/** 删除用户素材（不能删除 built-in） */
+/** 删除用户素材（不能删除 built-in / workspace） */
 export function removeUserAsset(category: AssetCategory, name: string): boolean {
   if (category === 'System') {
     const before = userSystemAssets.length;
@@ -210,6 +209,31 @@ export function removeUserAsset(category: AssetCategory, name: string): boolean 
   }
   notifyChange();
   return true;
+}
+
+/** 设置工作区素材（由 workspace 引擎调用） */
+export function setWorkspaceAssets(
+  category: AssetCategory,
+  assets: AssetEntry[],
+): void {
+  if (category === 'System') {
+    workspaceSystemAssets = assets;
+  } else {
+    workspaceFaceSetAssets = assets;
+  }
+  notifyChange();
+}
+
+/** 获取工作区素材 */
+export function getWorkspaceAssets(category: AssetCategory): AssetEntry[] {
+  return category === 'System' ? workspaceSystemAssets : workspaceFaceSetAssets;
+}
+
+/** 清空工作区素材 */
+export function clearWorkspaceAssets(): void {
+  workspaceSystemAssets = [];
+  workspaceFaceSetAssets = [];
+  notifyChange();
 }
 
 /** 订阅素材库变化 */

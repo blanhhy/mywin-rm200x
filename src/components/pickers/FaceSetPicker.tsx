@@ -19,6 +19,7 @@ import {
 import { useAssets } from '../../hooks/useAssets';
 import { loadImage } from '../../engine/messageWindow';
 import { RPG_CONSTANTS, type LoadedImage } from '../../types';
+import { useStore } from '../../store/useStore';
 
 export interface FaceSetPickerValue {
   name: string;
@@ -47,6 +48,9 @@ export default function FaceSetPicker({
   title = '选择 FaceSet',
 }: FaceSetPickerProps) {
   const assets = useAssets('FaceSet');
+  const workspace = useStore((s) => s.workspace);
+  const saveAssetToWorkspace = useStore((s) => s.saveAssetToWorkspace);
+  const removeAssetFromWorkspace = useStore((s) => s.removeAssetFromWorkspace);
   const [selectedName, setSelectedName] = useState<string | null>(currentName);
   const [loadedImage, setLoadedImage] = useState<LoadedImage | null>(null);
   const [faceIndex, setFaceIndex] = useState(currentFaceIndex);
@@ -89,16 +93,29 @@ export default function FaceSetPicker({
 
   const handleAddAsset = async (file: File) => {
     try {
-      const entry = await addUserAsset('FaceSet', file);
-      setSelectedName(entry.name);
+      if (workspace) {
+        const entry = await saveAssetToWorkspace('FaceSet', file);
+        if (entry) {
+          setSelectedName(entry.name);
+        } else {
+          setLoadingError('保存到工作区失败');
+        }
+      } else {
+        const entry = await addUserAsset('FaceSet', file);
+        setSelectedName(entry.name);
+      }
     } catch (e) {
       setLoadingError(`导入失败：${e}`);
     }
   };
 
-  const handleRemoveUserAsset = (name: string) => {
-    if (!confirm(`确定要删除用户素材"${name}"吗？`)) return;
-    removeUserAsset('FaceSet', name);
+  const handleRemoveAsset = async (name: string, source: string) => {
+    if (!confirm(`确定要删除素材"${name}"吗？`)) return;
+    if (source === 'workspace') {
+      await removeAssetFromWorkspace('FaceSet', name);
+    } else {
+      removeUserAsset('FaceSet', name);
+    }
     if (selectedName === name) {
       setSelectedName(null);
       setLoadedImage(null);
@@ -165,17 +182,27 @@ export default function FaceSetPicker({
             key={`${a.source}:${a.name}`}
             className={`asset-item ${selectedName === a.name ? 'selected' : ''}`}
             onClick={() => setSelectedName(a.name)}
-            title={a.source === 'builtin' ? '内置 RTP' : '用户导入'}
+            title={
+              a.source === 'builtin'
+                ? '内置 RTP'
+                : a.source === 'workspace'
+                  ? '工作区素材'
+                  : '用户导入'
+            }
           >
             <span className="asset-name">{a.name}</span>
-            <span className="asset-tag">{a.source === 'builtin' ? 'RTP' : 'USER'}</span>
-            {a.source === 'user' && (
+            <span
+              className={`asset-tag ${a.source === 'workspace' ? 'tag-workspace' : ''}`}
+            >
+              {a.source === 'builtin' ? 'RTP' : a.source === 'workspace' ? 'WORK' : 'USER'}
+            </span>
+            {a.source !== 'builtin' && (
               <button
                 className="modal-close"
                 style={{ width: 18, height: 18, fontSize: 13, marginLeft: 4 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleRemoveUserAsset(a.name);
+                  handleRemoveAsset(a.name, a.source);
                 }}
                 title="删除"
               >

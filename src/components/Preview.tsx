@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { renderMessageWindow, computeWindowSize } from '../engine/messageWindow';
 import { SystemImageRenderer } from '../engine/systemImage';
-import { exportCanvasAsPNG, recommendTransparentColor } from '../engine/pngExporter';
+import {
+  canvasTo8bitPNG,
+  downloadPNG,
+  recommendTransparentColor,
+} from '../engine/pngExporter';
 
 /** 移动端基础缩放系数：让标准 320px 窗口在 1x 下适配约 360px CSS 宽屏幕 */
 const MOBILE_BASE_SCALE = 0.94;
@@ -27,9 +31,13 @@ function useIsMobile(): boolean {
 
 export default function Preview() {
   const config = useStore((s) => s.config);
+  const workspace = useStore((s) => s.workspace);
+  const exportPNGToWorkspace = useStore((s) => s.exportPNGToWorkspace);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [transparentColor, setTransparentColor] = useState(recommendTransparentColor());
   const [zoom, setZoom] = useState(2);
+  const [exportMsg, setExportMsg] = useState<string | null>(null);
+  const [exportError, setExportError] = useState(false);
   const isMobile = useIsMobile();
 
   // 实时渲染
@@ -61,8 +69,28 @@ export default function Preview() {
 
   const handleExport = async () => {
     if (!canvasRef.current) return;
-    const filename = `mywin-${Date.now()}.png`;
-    await exportCanvasAsPNG(canvasRef.current, filename, { transparentColor });
+    try {
+      const pngData = await canvasTo8bitPNG(canvasRef.current, { transparentColor });
+      const filename = `mywin-${Date.now()}.png`;
+      if (workspace) {
+        const savedName = await exportPNGToWorkspace(filename, pngData);
+        if (savedName) {
+          setExportError(false);
+          setExportMsg(`已保存到工作区 Picture/${savedName}`);
+        } else {
+          setExportError(true);
+          setExportMsg('导出到工作区失败');
+        }
+      } else {
+        downloadPNG(pngData, filename);
+        setExportError(false);
+        setExportMsg('已开始下载');
+      }
+      setTimeout(() => setExportMsg(null), 3000);
+    } catch (e) {
+      setExportError(true);
+      setExportMsg(`导出失败：${e}`);
+    }
   };
 
   return (
@@ -135,9 +163,10 @@ export default function Preview() {
           </button>
         </label>
         <button className="export-btn" onClick={handleExport}>
-          保存为 PNG
+          {workspace ? '保存到工作区' : '保存为 PNG'}
         </button>
       </div>
+      {exportMsg && <div className={`export-msg ${exportError ? 'error' : ''}`}>{exportMsg}</div>}
     </div>
   );
 }

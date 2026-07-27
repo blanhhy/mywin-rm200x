@@ -7,34 +7,58 @@ import {
   type MessageWindowConfig,
   type Padding,
 } from '../types';
+import {
+  setWorkspaceAssets,
+  clearWorkspaceAssets,
+  type AssetCategory,
+  type AssetEntry,
+} from '../engine/assetLoader';
+import {
+  openWorkspace,
+  closeWorkspace as closeWorkspaceDir,
+  tryRestoreWorkspace,
+  listWorkspaceAssets,
+  saveAssetToWorkspace,
+  removeAssetFromWorkspace,
+  exportToWorkspace,
+  isFileSystemAccessSupported,
+  type Workspace as WorkspaceInfo,
+} from '../engine/workspace';
 
 interface StoreState {
   config: MessageWindowConfig;
-  /** 当前激活的设置页 */
   activeTab: 'text' | 'window' | 'background' | 'face';
-  /** 是否已初始化（加载默认 System 图等） */
   initialized: boolean;
+  workspace: WorkspaceInfo | null;
+  workspaceLoading: boolean;
+  workspaceError: string | null;
 
-  /** 更新配置（函数式更新） */
   updateConfig: (updater: (config: MessageWindowConfig) => MessageWindowConfig) => void;
-  /** 简单合并更新 */
   patchConfig: (partial: Partial<MessageWindowConfig>) => void;
-  /** 设置当前 tab */
   setActiveTab: (tab: StoreState['activeTab']) => void;
-  /** 重置为默认配置 */
   resetConfig: () => void;
-  /** 还原窗口设置为 RPG Runtime 标准 */
   restoreStandardWindow: () => void;
-  /** 标记已初始化 */
   setInitialized: (v: boolean) => void;
+
+  // 工作区操作
+  openWorkspace: () => Promise<void>;
+  restoreWorkspace: () => Promise<void>;
+  closeWorkspace: () => Promise<void>;
+  saveAssetToWorkspace: (category: AssetCategory, file: File) => Promise<AssetEntry | null>;
+  removeAssetFromWorkspace: (category: AssetCategory, name: string) => Promise<boolean>;
+  exportPNGToWorkspace: (filename: string, pngData: Uint8Array) => Promise<string | null>;
+  isFileSystemSupported: () => boolean;
 }
 
-export const useStore = create<StoreState>((set) => ({
+export const useStore = create<StoreState>((set, get) => ({
   config: {
     ...DEFAULT_CONFIG,
   },
   activeTab: 'text',
   initialized: false,
+  workspace: null,
+  workspaceLoading: false,
+  workspaceError: null,
 
   updateConfig: (updater) =>
     set((state) => ({
@@ -70,4 +94,94 @@ export const useStore = create<StoreState>((set) => ({
     })),
 
   setInitialized: (v) => set({ initialized: v }),
+
+  isFileSystemSupported: () => isFileSystemAccessSupported(),
+
+  openWorkspace: async () => {
+    set({ workspaceLoading: true, workspaceError: null });
+    try {
+      const ws = await openWorkspace();
+      if (ws) {
+        set({ workspace: ws });
+        const sysAssets = await listWorkspaceAssets(ws, 'System');
+        const faceAssets = await listWorkspaceAssets(ws, 'FaceSet');
+        setWorkspaceAssets('System', sysAssets);
+        setWorkspaceAssets('FaceSet', faceAssets);
+      }
+    } catch (e) {
+      set({ workspaceError: String(e) || '打开工作区失败' });
+    } finally {
+      set({ workspaceLoading: false });
+    }
+  },
+
+  restoreWorkspace: async () => {
+    try {
+      const ws = await tryRestoreWorkspace();
+      if (ws) {
+        set({ workspace: ws });
+        const sysAssets = await listWorkspaceAssets(ws, 'System');
+        const faceAssets = await listWorkspaceAssets(ws, 'FaceSet');
+        setWorkspaceAssets('System', sysAssets);
+        setWorkspaceAssets('FaceSet', faceAssets);
+      }
+    } catch {
+      // 静默失败，不影响应用正常使用
+    }
+  },
+
+  closeWorkspace: async () => {
+    set({ workspaceLoading: true });
+    try {
+      await closeWorkspaceDir();
+      clearWorkspaceAssets();
+      set({ workspace: null, workspaceError: null });
+    } catch (e) {
+      set({ workspaceError: String(e) || '关闭工作区失败' });
+    } finally {
+      set({ workspaceLoading: false });
+    }
+  },
+
+  saveAssetToWorkspace: async (category: AssetCategory, file: File) => {
+    const { workspace } = get();
+    if (!workspace) return null;
+    try {
+      const entry = await saveAssetToWorkspace(workspace, category, file);
+      // 重新加载列表
+      const updated = await listWorkspaceAssets(workspace, category);
+      setWorkspaceAssets(category, updated);
+      return entry;
+    } catch (e) {
+      set({ workspaceError: String(e) || '保存素材失败' });
+      return null;
+    }
+  },
+
+  removeAssetFromWorkspace: async (category: AssetCategory, name: string) => {
+    const { workspace } = get();
+    if (!workspace) return false;
+    try {
+      const ok = await removeAssetFromWorkspace(workspace, category, name);
+      if (ok) {
+        const updated = await listWorkspaceAssets(workspace, category);
+        setWorkspaceAssets(category, updated);
+      }
+      return ok;
+    } catch (e) {
+      set({ workspaceError: String(e) || '删除素材失败' });
+      return false;
+    }
+  },
+
+  exportPNGToWorkspace: async (filename: string, pngData: Uint8Array) => {
+    const { workspace } = get();
+    if (!workspace) return null;
+    try {
+      return await exportToWorkspace(workspace, filename, pngData);
+    } catch (e) {
+      set({ workspaceError: String(e) || '导出到工作区失败' });
+      return null;
+    }
+  },
 }));
