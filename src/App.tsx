@@ -53,24 +53,26 @@ export default function App() {
           重置
         </button>
       </header>
-      <nav className="tab-bar">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
-            onClick={() => setActiveTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
       <main className="app-main">
-        <section className="settings-panel">
-          {activeTab === 'text' && <TextTab />}
-          {activeTab === 'window' && <WindowTab />}
-          {activeTab === 'background' && <BackgroundTab />}
-          {activeTab === 'face' && <FaceTab />}
-        </section>
+        <aside className="app-sidebar">
+          <nav className="tab-bar">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
+                onClick={() => setActiveTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+          <section className="settings-panel">
+            {activeTab === 'text' && <TextTab />}
+            {activeTab === 'window' && <WindowTab />}
+            {activeTab === 'background' && <BackgroundTab />}
+            {activeTab === 'face' && <FaceTab />}
+          </section>
+        </aside>
         <section className="preview-panel">
           <Preview />
         </section>

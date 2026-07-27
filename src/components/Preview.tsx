@@ -4,11 +4,33 @@ import { renderMessageWindow, computeWindowSize } from '../engine/messageWindow'
 import { SystemImageRenderer } from '../engine/systemImage';
 import { exportCanvasAsPNG, recommendTransparentColor } from '../engine/pngExporter';
 
+/** 移动端基础缩放系数：让标准 320px 窗口在 1x 下适配约 360px CSS 宽屏幕 */
+const MOBILE_BASE_SCALE = 0.94;
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      ? window.matchMedia('(max-width: 899px)').matches
+      : false,
+  );
+
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 899px)');
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    setIsMobile(mql.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+
+  return isMobile;
+}
+
 export default function Preview() {
   const config = useStore((s) => s.config);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [transparentColor, setTransparentColor] = useState(recommendTransparentColor());
   const [zoom, setZoom] = useState(2);
+  const isMobile = useIsMobile();
 
   // 实时渲染
   useEffect(() => {
@@ -21,6 +43,9 @@ export default function Preview() {
   }, [config]);
 
   const { width, height } = useMemo(() => computeWindowSize(config), [config]);
+
+  // 移动端额外应用基础缩放，让标准窗口在 1x 下能完整显示
+  const effectiveZoom = isMobile ? zoom * MOBILE_BASE_SCALE : zoom;
 
   // 配色列表（用于展示）
   const colors = useMemo(() => {
@@ -71,8 +96,8 @@ export default function Preview() {
           width={width}
           height={height}
           style={{
-            width: width * zoom,
-            height: height * zoom,
+            width: width * effectiveZoom,
+            height: height * effectiveZoom,
             imageRendering: 'pixelated',
           }}
         />

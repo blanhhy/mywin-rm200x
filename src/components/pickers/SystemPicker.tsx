@@ -300,7 +300,7 @@ export default function SystemPicker({
                 className="auto-detect-btn"
                 onClick={handleAutoInfer}
               >
-                自动推断
+                自动
               </button>
             </div>
             <small className="field-hint">
