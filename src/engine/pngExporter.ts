@@ -88,6 +88,7 @@ function quantizeToPalette(
   palette.push(tKey);
   colorMap.set(tKey, 0);
 
+  let hitLimit = false;
   for (let i = 0; i < n; i++) {
     const r = rgba[i * 4];
     const g = rgba[i * 4 + 1];
@@ -95,7 +96,7 @@ function quantizeToPalette(
     const key = (r << 16) | (g << 8) | b;
     if (!colorMap.has(key)) {
       if (palette.length >= 256) {
-        // 超过 256 色：停止收集，后续用最近邻映射
+        hitLimit = true;
         break;
       }
       colorMap.set(key, palette.length);
@@ -103,8 +104,8 @@ function quantizeToPalette(
     }
   }
 
-  // 如果颜色 <= 256，直接映射
-  if (palette.length <= 256) {
+  // 颜色未超过 256，直接映射
+  if (!hitLimit) {
     const indices = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
       const r = rgba[i * 4];
@@ -323,10 +324,27 @@ async function encodeIndexedPNG(
 // ── 公共 API ───────────────────────────────────────────
 
 /**
+ * 统计 canvas 中的唯一颜色数量（透明像素视为同一颜色）
+ */
+export function countUniqueColors(canvas: HTMLCanvasElement): number {
+  const ctx = canvas.getContext('2d')!;
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const colors = new Set<number>();
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue; // 透明像素统一跳过
+    // 将 RGBA 打包为 32 位整数
+    colors.add((data[i] << 24) | (data[i + 1] << 16) | (data[i + 2] << 8) | data[i + 3]);
+  }
+  return colors.size;
+}
+
+/**
  * 将 canvas 导出为 8 位索引色 PNG（bitDepth=8, colorType=3）
  * - 透明像素（alpha=0）被替换为 transparentColor
  * - 调色板 palette[0] = 透明色
  * - 不输出 tRNS chunk（RPG Maker 约定 palette[0] 即透明色）
+ * - 颜色超过 256 色时使用中位切分法量化
  */
 export async function canvasTo8bitPNG(
   canvas: HTMLCanvasElement,
@@ -357,6 +375,26 @@ export async function canvasTo8bitPNG(
 
   // 编码 PNG
   return encodeIndexedPNG(indices, canvas.width, canvas.height, palette);
+}
+
+/**
+ * 将 canvas 导出为 RGBA PNG（真彩色，无颜色数量限制）
+ * 使用浏览器原生 canvas.toBlob() 编码（与右键保存图片同源），
+ * 透明像素保留 alpha 通道
+ */
+export function canvasToRGBAPNG(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('canvas.toBlob 返回空'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+      reader.onerror = () => reject(reader.error ?? new Error('FileReader 失败'));
+      reader.readAsArrayBuffer(blob);
+    }, 'image/png');
+  });
 }
 
 /**

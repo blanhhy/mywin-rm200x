@@ -2,8 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { renderMessageWindow, computeWindowSize } from '../engine/messageWindow';
 import { SystemImageRenderer } from '../engine/systemImage';
+import Modal from './Modal';
 import {
   canvasTo8bitPNG,
+  canvasToRGBAPNG,
+  countUniqueColors,
   downloadPNG,
   recommendTransparentColor,
 } from '../engine/pngExporter';
@@ -38,6 +41,7 @@ export default function Preview() {
   const [zoom, setZoom] = useState(2);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [exportError, setExportError] = useState(false);
+  const [colorOverflow, setColorOverflow] = useState<{ count: number } | null>(null);
   const isMobile = useIsMobile();
 
   // 实时渲染
@@ -67,10 +71,16 @@ export default function Preview() {
     }
   }, [config.colorSystem]);
 
-  const handleExport = async () => {
+  // 实际执行保存（8 位索引色或 RGBA）
+  const doSave = async (mode: 'indexed' | 'rgba') => {
     if (!canvasRef.current) return;
     try {
-      const pngData = await canvasTo8bitPNG(canvasRef.current, { transparentColor });
+      let pngData: Uint8Array;
+      if (mode === 'rgba') {
+        pngData = await canvasToRGBAPNG(canvasRef.current);
+      } else {
+        pngData = await canvasTo8bitPNG(canvasRef.current, { transparentColor });
+      }
       const filename = `mywin-${Date.now()}.png`;
       if (workspace) {
         const savedName = await exportPNGToWorkspace(filename, pngData);
@@ -84,13 +94,23 @@ export default function Preview() {
       } else {
         downloadPNG(pngData, filename);
         setExportError(false);
-        setExportMsg('已开始下载');
+        setExportMsg(mode === 'rgba' ? '已开始下载（真彩色）' : '已开始下载');
       }
       setTimeout(() => setExportMsg(null), 3000);
     } catch (e) {
       setExportError(true);
       setExportMsg(`导出失败：${e}`);
     }
+  };
+
+  const handleExport = () => {
+    if (!canvasRef.current) return;
+    const colorCount = countUniqueColors(canvasRef.current);
+    if (colorCount > 256) {
+      setColorOverflow({ count: colorCount });
+      return;
+    }
+    doSave('indexed');
   };
 
   return (
@@ -167,6 +187,56 @@ export default function Preview() {
         </button>
       </div>
       {exportMsg && <div className={`export-msg ${exportError ? 'error' : ''}`}>{exportMsg}</div>}
+
+      <Modal
+        open={colorOverflow !== null}
+        title="色彩溢出"
+        onClose={() => setColorOverflow(null)}
+        width={440}
+        footer={
+          <>
+            <button
+              className="modal-btn"
+              onClick={() => setColorOverflow(null)}
+            >
+              返回调整
+            </button>
+            <button
+              className="modal-btn"
+              onClick={() => {
+                setColorOverflow(null);
+                doSave('rgba');
+              }}
+            >
+              扩展色彩并保存
+            </button>
+            <button
+              className="modal-btn primary"
+              onClick={() => {
+                setColorOverflow(null);
+                doSave('indexed');
+              }}
+            >
+              压缩色彩并保存
+            </button>
+          </>
+        }
+      >
+        <div className="color-overflow-body">
+          <p>
+            当前画面包含 <strong>{colorOverflow?.count}</strong> 种颜色，
+            超过了 RM 素材的 256 色限制。
+          </p>
+          <ul className="color-overflow-options">
+            <li>
+              <strong>压缩色彩</strong>：合并相近的颜色，使之成为 256 色
+            </li>
+            <li>
+              <strong>扩展色彩</strong>：直接以真彩色导出
+            </li>
+          </ul>
+        </div>
+      </Modal>
     </div>
   );
 }

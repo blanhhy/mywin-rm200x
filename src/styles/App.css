@@ -680,6 +680,41 @@
   min-height: 0;
 }
 
+/* 颜色超限弹窗：覆盖 flex 布局为 block */
+.color-overflow-body {
+  display: block;
+  width: 100%;
+}
+
+.color-overflow-body p {
+  margin: 0 0 12px;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.color-overflow-options {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.color-overflow-options li {
+  padding: 10px 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.color-overflow-options strong {
+  color: var(--color-text);
+}
+
 .modal-footer {
   display: flex;
   align-items: center;
