@@ -10,6 +10,7 @@
 
 import { RPG_CONSTANTS } from '../types';
 import { BITMAP_FONTS, type BitmapFontData } from './bitmap-fonts';
+import { isExFontCode, getExFontGlyphData, EXFONT_BASE } from './exfont';
 
 /** 位图字体标识符 */
 export type BitmapFontId =
@@ -80,8 +81,19 @@ interface GlyphResult {
 
 /**
  * 查找字形：在回退链中依次查找
+ * ExFont 码点（U+F000..U+F033）直接从 exfont.png 提取，不经过位图字体回退链
  */
 function findGlyph(fontId: BitmapFontId, code: number): GlyphResult {
+  // ExFont 字形：从 exfont.png 提取 1-bit mask
+  if (isExFontCode(code)) {
+    const data = getExFontGlyphData(code);
+    if (data) {
+      return { data, isFull: true }; // ExFont 字形固定 12×12（全角宽度）
+    }
+    // exfont 未加载时回退到替换字符
+    return { data: REPLACEMENT_GLYPH_DATA, isFull: REPLACEMENT_IS_FULL };
+  }
+
   const chain = FALLBACK_CHAIN[fontId];
   for (const fid of chain) {
     const font = BITMAP_FONTS[fid];
@@ -291,6 +303,21 @@ function parseText(text: string, defaultColor: number = 0): ParsedLine[] {
     let i = 0;
     while (i < rawLine.length) {
       const ch = rawLine[i];
+      // ExFont 转义：$A-$Z → 索引 0-25，$a-$z → 索引 26-51
+      if (ch === '$') {
+        const next = rawLine[i + 1];
+        if (next >= 'A' && next <= 'Z') {
+          buf += String.fromCodePoint(EXFONT_BASE + (next.charCodeAt(0) - 65));
+          i += 2;
+          continue;
+        }
+        if (next >= 'a' && next <= 'z') {
+          buf += String.fromCodePoint(EXFONT_BASE + (next.charCodeAt(0) - 97 + 26));
+          i += 2;
+          continue;
+        }
+        // $ 后非字母：视为普通 $ 字符
+      }
       if (ch === '\\') {
         const next = rawLine[i + 1];
         if (next === 'c' || next === 'C') {
