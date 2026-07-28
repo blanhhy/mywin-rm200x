@@ -108,7 +108,7 @@
   .app-main {
     flex-direction: column;
     gap: 12px;
-    overflow: hidden;
+    overflow: auto;
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
@@ -120,10 +120,10 @@
   .app-sidebar {
     width: 100%;
     border-right: none;
-    overflow: hidden;
+    overflow: visible;
     order: 2;
-    flex: 1;
-    min-height: 0;
+    margin-top: -12px;
+    background: transparent;
   }
 
   .preview-panel {
@@ -140,7 +140,6 @@
     z-index: 10;
     border-radius: 12px 12px 0 0;
     border-top: 1px solid var(--color-border);
-    margin-top: -12px;
     background: var(--color-bg-elev);
     overflow: hidden;
   }
@@ -161,9 +160,9 @@
 
   .settings-panel {
     order: 3;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
+    flex: none;
+    min-height: 320px;
+    background: var(--color-bg-elev);
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
