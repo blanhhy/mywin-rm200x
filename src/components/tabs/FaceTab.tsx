@@ -33,7 +33,7 @@ export default function FaceTab() {
     <div className={`tab-content ${disabled ? 'disabled' : ''}`}>
       {disabled && (
         <div className="warning-banner">
-          脸图仅在标准窗口模式下可用。请先在【窗口】设置页打开【标准Message窗口】。
+          脸图仅在标准窗口模式下可用。请先在【窗口】设置页打开【使用标准窗口】。
         </div>
       )}
 

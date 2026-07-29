@@ -197,9 +197,12 @@ export default function Preview() {
           <>
             <button
               className="modal-btn"
-              onClick={() => setColorOverflow(null)}
+              onClick={() => {
+                setColorOverflow(null);
+                doSave('indexed');
+              }}
             >
-              返回调整
+              压缩色彩并保存
             </button>
             <button
               className="modal-btn"
@@ -212,12 +215,9 @@ export default function Preview() {
             </button>
             <button
               className="modal-btn primary"
-              onClick={() => {
-                setColorOverflow(null);
-                doSave('indexed');
-              }}
+              onClick={() => setColorOverflow(null)}
             >
-              压缩色彩并保存
+              返回调整
             </button>
           </>
         }
@@ -225,14 +225,15 @@ export default function Preview() {
         <div className="color-overflow-body">
           <p>
             当前画面包含 <strong>{colorOverflow?.count}</strong> 种颜色，
-            超过了 RM 素材的 256 色限制。
+            超过了 RM 素材的 256 色限制。<br/>
+            建议把各个要素 <strong>拆分到不同的图片</strong>。如果一定要保存，请选择：
           </p>
           <ul className="color-overflow-options">
             <li>
-              <strong>压缩色彩</strong>：合并相近的颜色，使之成为 256 色
+              <strong>压缩色彩</strong>：合并相近的颜色，直到只剩下 256 色
             </li>
             <li>
-              <strong>扩展色彩</strong>：直接以真彩色导出
+              <strong>扩展色彩</strong>：直接以 RGBA 真彩色导出
             </li>
           </ul>
         </div>

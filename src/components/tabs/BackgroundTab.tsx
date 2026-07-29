@@ -194,7 +194,7 @@ export default function BackgroundTab() {
           <div className="field-group">
             <label className="field-label">参考图片</label>
             <label className="upload-btn">
-              选择一张Message窗口图片
+              选择一张Message窗口图片...
               <input
                 type="file"
                 accept="image/png,image/bmp"

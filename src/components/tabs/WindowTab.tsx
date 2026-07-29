@@ -68,7 +68,7 @@ export default function WindowTab() {
             checked={config.standardWindow}
             onChange={handleStandardToggle}
           />
-          <span>标准Message窗口</span>
+          <span>使用标准窗口</span>
           <small className="field-hint">
             （关闭后可自定义）
           </small>
