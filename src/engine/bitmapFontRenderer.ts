@@ -287,6 +287,22 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
 }
 
 // === 文本解析（从 textRenderer 复制，避免循环依赖） ===
+//
+// 支持 RPG Maker 2000/2003 全部消息控制字符：
+//   \c[n] / \C[n]  颜色（n=0..19，>19 回到 0，空 [] 等价 \c[0]）
+//   \s[n] / \S[n]  文字速度        → 丢弃（静态展示无意义）
+//   \n[n] / \N[n]  角色名          → 保留原始代码
+//   \v[n] / \V[n]  变量值          → 保留原始代码
+//   \\             反斜杠字面量     → '\'
+//   \$             显示金钱        → 保留原始代码
+//   \!             等待按键        → 丢弃
+//   \.             延迟 1/4 秒     → 丢弃
+//   \|             延迟 1 秒       → 丢弃
+//   \^             不等待按键关闭   → 丢弃
+//   \_             半角空格        → ' '
+//   \>             加速显示        → 丢弃
+//   \<             减速显示        → 丢弃
+//   $A-$Z / $a-$z  ExFont 图标
 
 interface TextSegment {
   text: string;
@@ -324,32 +340,65 @@ function parseText(text: string, defaultColor: number = 0): ParsedLine[] {
       }
       if (ch === '\\') {
         const next = rawLine[i + 1];
-        if (next === 'c' || next === 'C') {
+        // 带参数的控制字符：\x[n]
+        if (next && 'cCsSnNvV'.indexOf(next) !== -1) {
           if (rawLine[i + 2] === '[') {
             const closeIdx = rawLine.indexOf(']', i + 3);
             if (closeIdx !== -1) {
-              const numStr = rawLine.slice(i + 3, closeIdx);
-              const num = numStr === '' ? 0 : parseInt(numStr, 10);
-              const newColor = Number.isNaN(num) || num > 19 ? 0 : num;
-              if (buf) {
-                segments.push({ text: buf, color: currentColor });
-                buf = '';
+              // \c[n] 需要解析颜色
+              if (next === 'c' || next === 'C') {
+                const numStr = rawLine.slice(i + 3, closeIdx);
+                const num = numStr === '' ? 0 : parseInt(numStr, 10);
+                const newColor = Number.isNaN(num) || num > 19 ? 0 : num;
+                if (buf) {
+                  segments.push({ text: buf, color: currentColor });
+                  buf = '';
+                }
+                currentColor = newColor;
+                i = closeIdx + 1;
+                continue;
               }
-              currentColor = newColor;
+              // \s[n] 丢弃（纯速度参数，静态展示无意义）
+              if (next === 's' || next === 'S') {
+                i = closeIdx + 1;
+                continue;
+              }
+              // \n[n] \v[n] 保留原始代码（运行时才有内容）
+              buf += rawLine.slice(i, closeIdx + 1);
               i = closeIdx + 1;
               continue;
             }
           }
-          if (buf) {
-            segments.push({ text: buf, color: currentColor });
-            buf = '';
+          // 不带 [ 的 \c 退化为颜色 0；其他不带 [ 的控制字符视为普通文本
+          if (next === 'c' || next === 'C') {
+            if (buf) {
+              segments.push({ text: buf, color: currentColor });
+              buf = '';
+            }
+            currentColor = 0;
+            i += 2;
+            continue;
           }
-          currentColor = 0;
-          i += 2;
-          continue;
+          // \s \n \v 不带 [ 时按普通字符处理
         }
         if (next === '\\') {
           buf += '\\';
+          i += 2;
+          continue;
+        }
+        if (next === '_') {
+          buf += ' ';
+          i += 2;
+          continue;
+        }
+        if (next === '$') {
+          // \$ 显示金钱，保留原始代码
+          buf += '\\$';
+          i += 2;
+          continue;
+        }
+        // 无参数控制字符：\! \. \| \^ \> \< → 丢弃
+        if (next && '!.|^<>'.indexOf(next) !== -1) {
           i += 2;
           continue;
         }
