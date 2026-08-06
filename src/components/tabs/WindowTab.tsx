@@ -156,9 +156,9 @@ export default function WindowTab() {
 
       <div className={`field-group ${disabled ? 'disabled' : ''}`}>
         <label className="field-label">内边距</label>
-        <div className="padding-grid">
-          <label>
-            上
+        <div className="padding-cross">
+          <div className="padding-cell padding-top">
+            <span className="padding-label">上</span>
             <input
               type="number"
               className="number-input"
@@ -166,19 +166,32 @@ export default function WindowTab() {
               onChange={(e) => handlePaddingChange('top', Number(e.target.value))}
               disabled={disabled}
             />
-          </label>
-          <label>
-            右
-            <input
-              type="number"
-              className="number-input"
-              value={config.padding.right}
-              onChange={(e) => handlePaddingChange('right', Number(e.target.value))}
-              disabled={disabled}
-            />
-          </label>
-          <label>
-            下
+          </div>
+          <div className="padding-row">
+            <div className="padding-cell padding-left">
+              <span className="padding-label">左</span>
+              <input
+                type="number"
+                className="number-input"
+                value={config.padding.left}
+                onChange={(e) => handlePaddingChange('left', Number(e.target.value))}
+                disabled={disabled}
+              />
+            </div>
+            <div className="padding-center" />
+            <div className="padding-cell padding-right">
+              <span className="padding-label">右</span>
+              <input
+                type="number"
+                className="number-input"
+                value={config.padding.right}
+                onChange={(e) => handlePaddingChange('right', Number(e.target.value))}
+                disabled={disabled}
+              />
+            </div>
+          </div>
+          <div className="padding-cell padding-bottom">
+            <span className="padding-label">下</span>
             <input
               type="number"
               className="number-input"
@@ -186,17 +199,7 @@ export default function WindowTab() {
               onChange={(e) => handlePaddingChange('bottom', Number(e.target.value))}
               disabled={disabled}
             />
-          </label>
-          <label>
-            左
-            <input
-              type="number"
-              className="number-input"
-              value={config.padding.left}
-              onChange={(e) => handlePaddingChange('left', Number(e.target.value))}
-              disabled={disabled}
-            />
-          </label>
+          </div>
         </div>
       </div>
 

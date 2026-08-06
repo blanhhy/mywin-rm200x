@@ -331,23 +331,40 @@
   gap: 12px;
 }
 
-.padding-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+.padding-cross {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  width: fit-content;
 }
 
-.padding-grid label {
+.padding-cell {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
-  color: var(--color-text-muted);
 }
 
-.padding-grid input {
-  flex: 1;
-  width: 50px;
+.padding-label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  min-width: 18px;
+}
+
+.padding-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.padding-center {
+  width: 60px;
+  height: 32px;
+}
+
+.padding-cross .number-input {
+  width: 52px;
 }
 
 .tile-rect-row {
