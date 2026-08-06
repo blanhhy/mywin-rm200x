@@ -1,5 +1,6 @@
 import { useStore } from '../../store/useStore';
 import { RPG_CONSTANTS, type Padding } from '../../types';
+import { computeWindowSize } from '../../engine/messageWindow';
 
 export default function WindowTab() {
   const { config, updateConfig, restoreStandardWindow } = useStore();
@@ -26,17 +27,21 @@ export default function WindowTab() {
   };
 
   const handleWidthMode = (mode: 'auto' | 'number') => {
-    updateConfig((c) => ({
-      ...c,
-      width: mode === 'auto' ? 'auto' : RPG_CONSTANTS.MESSAGE_BOX_WIDTH,
-    }));
+    if (mode === 'number' && config.width === 'auto') {
+      const { width } = computeWindowSize(config);
+      updateConfig((c) => ({ ...c, width }));
+    } else {
+      updateConfig((c) => ({ ...c, width: mode === 'auto' ? 'auto' : c.width }));
+    }
   };
 
   const handleHeightMode = (mode: 'auto' | 'number') => {
-    updateConfig((c) => ({
-      ...c,
-      height: mode === 'auto' ? 'auto' : RPG_CONSTANTS.MESSAGE_BOX_HEIGHT,
-    }));
+    if (mode === 'number' && config.height === 'auto') {
+      const { height } = computeWindowSize(config);
+      updateConfig((c) => ({ ...c, height }));
+    } else {
+      updateConfig((c) => ({ ...c, height: mode === 'auto' ? 'auto' : c.height }));
+    }
   };
 
   const handleWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
