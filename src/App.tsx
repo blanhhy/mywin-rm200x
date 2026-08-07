@@ -122,13 +122,18 @@ function WorkspaceSelector() {
 }
 
 export default function App() {
-  const { activeTab, setActiveTab, config, updateConfig, initialized, setInitialized, resetConfig, restoreWorkspace } =
+  const { activeTab, setActiveTab, config, updateConfig, initialized, setInitialized, resetConfig, restoreWorkspace, theme, toggleTheme } =
     useStore();
 
   // 应用启动时自动恢复上次的工作区
   useEffect(() => {
     restoreWorkspace();
   }, [restoreWorkspace]);
+
+  // 初始化主题 data-theme
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, []);
 
   useEffect(() => {
     if (initialized) return;
@@ -164,9 +169,14 @@ export default function App() {
       <header className="app-header">
         <h1>MyWin RM200X</h1>
         <WorkspaceSelector />
-        <button className="reset-btn" onClick={resetConfig} title="重置为默认配置">
-          重置
-        </button>
+        <div className="header-actions">
+          <button className="reset-btn" onClick={resetConfig} title="重置为默认配置">
+            重置
+          </button>
+          <button className="reset-btn theme-btn" onClick={toggleTheme} title={theme === 'dark' ? '切换到亮色' : '切换到暗色'}>
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
+        </div>
       </header>
       <main className="app-main">
         <aside className="app-sidebar">

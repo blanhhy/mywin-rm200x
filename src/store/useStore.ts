@@ -32,6 +32,7 @@ interface StoreState {
   workspace: WorkspaceInfo | null;
   workspaceLoading: boolean;
   workspaceError: string | null;
+  theme: 'dark' | 'light';
 
   updateConfig: (updater: (config: MessageWindowConfig) => MessageWindowConfig) => void;
   patchConfig: (partial: Partial<MessageWindowConfig>) => void;
@@ -39,6 +40,7 @@ interface StoreState {
   resetConfig: () => void;
   restoreStandardWindow: () => void;
   setInitialized: (v: boolean) => void;
+  toggleTheme: () => void;
 
   // 工作区操作
   openWorkspace: () => Promise<void>;
@@ -50,6 +52,8 @@ interface StoreState {
   isFileSystemSupported: () => boolean;
 }
 
+const savedTheme = (typeof localStorage !== 'undefined' && localStorage.getItem('mywin-theme')) as 'dark' | 'light' | null;
+
 export const useStore = create<StoreState>((set, get) => ({
   config: {
     ...DEFAULT_CONFIG,
@@ -59,6 +63,7 @@ export const useStore = create<StoreState>((set, get) => ({
   workspace: null,
   workspaceLoading: false,
   workspaceError: null,
+  theme: savedTheme ?? 'dark',
 
   updateConfig: (updater) =>
     set((state) => ({
@@ -94,6 +99,13 @@ export const useStore = create<StoreState>((set, get) => ({
     })),
 
   setInitialized: (v) => set({ initialized: v }),
+
+  toggleTheme: () => {
+    const next = get().theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('mywin-theme', next);
+    document.documentElement.dataset.theme = next;
+    set({ theme: next });
+  },
 
   isFileSystemSupported: () => isFileSystemAccessSupported(),
 
