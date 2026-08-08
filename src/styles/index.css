@@ -18,6 +18,8 @@
   --color-success: #2ecc71;
   --color-warning: #f1c40f;
   --color-pixel: #00ff00;
+  --checker-bg: #444;
+  --checker-cell: #888;
 
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
@@ -46,6 +48,8 @@
   --color-success: #27ae60;
   --color-warning: #d4a017;
   --color-pixel: #009900;
+  --checker-bg: #ffffff;
+  --checker-cell: #e0e0e0;
 
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
