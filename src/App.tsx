@@ -8,6 +8,7 @@ import WindowTab from './components/tabs/WindowTab';
 import BackgroundTab from './components/tabs/BackgroundTab';
 import FaceTab from './components/tabs/FaceTab';
 import Preview from './components/Preview';
+import PictureDrawer from './components/PictureDrawer';
 import './styles/App.css';
 
 function WorkspaceSelector() {
@@ -122,7 +123,7 @@ function WorkspaceSelector() {
 }
 
 export default function App() {
-  const { activeTab, setActiveTab, config, updateConfig, initialized, setInitialized, resetConfig, restoreWorkspace, theme, toggleTheme } =
+  const { activeTab, setActiveTab, config, updateConfig, initialized, setInitialized, resetConfig, restoreWorkspace, theme, toggleTheme, workspace, drawerOpen, toggleDrawer } =
     useStore();
 
   // 应用启动时自动恢复上次的工作区
@@ -176,6 +177,15 @@ export default function App() {
           <button className="reset-btn theme-btn" onClick={toggleTheme} title={theme === 'dark' ? '切换到亮色' : '切换到暗色'}>
             {theme === 'dark' ? '☀' : '☾'}
           </button>
+          {workspace && (
+            <button
+              className={`reset-btn drawer-btn ${drawerOpen ? 'active' : ''}`}
+              onClick={toggleDrawer}
+              title={drawerOpen ? '关闭图库' : '打开图库'}
+            >
+              ☰
+            </button>
+          )}
         </div>
       </header>
       <main className="app-main">
@@ -201,6 +211,7 @@ export default function App() {
         <section className="preview-panel">
           <Preview />
         </section>
+        {workspace && drawerOpen && <PictureDrawer />}
       </main>
       <footer className="app-footer">
         <span>配置：{config.standardWindow ? '标准窗口' : '自定义窗口'}</span>

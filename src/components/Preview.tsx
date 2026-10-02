@@ -36,13 +36,22 @@ export default function Preview() {
   const config = useStore((s) => s.config);
   const workspace = useStore((s) => s.workspace);
   const exportPNGToWorkspace = useStore((s) => s.exportPNGToWorkspace);
+  const selectedPicture = useStore((s) => s.selectedPicture);
+  const overwritePictureToWorkspace = useStore((s) => s.overwritePictureToWorkspace);
+  const refreshPictures = useStore((s) => s.refreshPictures);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [transparentColor, setTransparentColor] = useState(recommendTransparentColor());
   const [zoom, setZoom] = useState(2);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [exportError, setExportError] = useState(false);
   const [colorOverflow, setColorOverflow] = useState<{ count: number } | null>(null);
+  const [compareDims, setCompareDims] = useState<{ w: number; h: number } | null>(null);
   const isMobile = useIsMobile();
+
+  // 切换对照图片时重置尺寸缓存
+  useEffect(() => {
+    setCompareDims(null);
+  }, [selectedPicture?.fileName]);
 
   // 实时渲染
   useEffect(() => {
@@ -83,13 +92,21 @@ export default function Preview() {
       }
       const filename = `mywin-${Date.now()}.png`;
       if (workspace) {
-        const savedName = await exportPNGToWorkspace(filename, pngData);
+        // 替换模式下覆盖选中的图片，否则另存为新文件
+        const savedName = selectedPicture
+          ? await overwritePictureToWorkspace(selectedPicture.fileName, pngData)
+          : await exportPNGToWorkspace(filename, pngData);
         if (savedName) {
           setExportError(false);
-          setExportMsg(`已保存到工作区 Picture/${savedName}`);
+          setExportMsg(
+            selectedPicture
+              ? `已覆盖 Picture/${savedName}`
+              : `已保存到工作区 Picture/${savedName}`,
+          );
+          await refreshPictures();
         } else {
           setExportError(true);
-          setExportMsg('导出到工作区失败');
+          setExportMsg(selectedPicture ? '覆盖图片失败' : '导出到工作区失败');
         }
       } else {
         downloadPNG(pngData, filename);
@@ -175,10 +192,37 @@ export default function Preview() {
           </button>
         </label>
         <button className="export-btn" onClick={handleExport}>
-          {workspace ? '保存到工作区' : '保存为 PNG'}
+          {selectedPicture ? '覆盖保存' : workspace ? '保存到工作区' : '保存为 PNG'}
         </button>
       </div>
       {exportMsg && <div className={`export-msg ${exportError ? 'error' : ''}`}>{exportMsg}</div>}
+
+      {selectedPicture && (
+        <div className="compare-section">
+          <div className="compare-label">
+            目标图片： Picture/{selectedPicture.fileName}
+          </div>
+          <div className="canvas-wrapper">
+            <img
+              className="compare-img"
+              src={selectedPicture.dataUrl}
+              alt={selectedPicture.fileName}
+              style={
+                compareDims
+                  ? {
+                      width: compareDims.w * effectiveZoom,
+                      height: compareDims.h * effectiveZoom,
+                    }
+                  : undefined
+              }
+              onLoad={(e) => {
+                const img = e.currentTarget;
+                setCompareDims({ w: img.naturalWidth, h: img.naturalHeight });
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       <Modal
         open={colorOverflow !== null}

@@ -651,6 +651,91 @@ async function exportFromVirtual(
   return finalName;
 }
 
+// === Picture 目录（替换模式） ===
+
+/** Picture 目录中的图片条目 */
+export interface PictureEntry {
+  /** 完整文件名（含扩展名），如 "mywin-123.png" */
+  fileName: string;
+  /** 可直接用于 img.src 的 dataURL */
+  dataUrl: string;
+}
+
+/**
+ * 列出工作区 Picture 目录中的 PNG 图片
+ * （导出产物均为 PNG，因此只列出 PNG 以便安全覆盖）
+ */
+export async function listWorkspacePictures(
+  workspace: Workspace,
+): Promise<PictureEntry[]> {
+  if (workspace.mode === 'virtual') {
+    const files = await listVirtualFiles('Picture/');
+    return files
+      .map((f) => ({
+        fileName: f.key.slice('Picture/'.length),
+        dataUrl: f.dataUrl,
+      }))
+      .filter((p) => /\.png$/i.test(p.fileName))
+      .sort((a, b) => a.fileName.localeCompare(b.fileName));
+  }
+
+  if (!workspace.handle) return [];
+  const dir = await workspace.handle.getDirectoryHandle('Picture', { create: true });
+  const results: PictureEntry[] = [];
+  for await (const [name, handle] of dir.entries()) {
+    if (handle.kind === 'file' && /\.png$/i.test(name)) {
+      try {
+        const dataUrl = await fileHandleToDataUrl(handle as FileSystemFileHandle);
+        results.push({ fileName: name, dataUrl });
+      } catch {
+        // 忽略无法读取的文件
+      }
+    }
+  }
+  return results.sort((a, b) => a.fileName.localeCompare(b.fileName));
+}
+
+/**
+ * 覆盖 Picture 目录中的指定图片
+ * virtual 模式下会同时触发下载
+ */
+export async function overwritePictureInWorkspace(
+  workspace: Workspace,
+  fileName: string,
+  pngData: Uint8Array,
+): Promise<string> {
+  if (workspace.mode === 'virtual') {
+    return overwriteVirtualPicture(fileName, pngData);
+  }
+  if (!workspace.handle) throw new Error('工作区句柄不可用');
+  const picDir = await ensureDir(workspace.handle, 'Picture');
+  const fileHandle = await picDir.getFileHandle(fileName, { create: true });
+  const writable = await fileHandle.createWritable();
+  const buf = pngData.buffer.slice(
+    pngData.byteOffset,
+    pngData.byteOffset + pngData.byteLength,
+  ) as ArrayBuffer;
+  await writable.write(buf);
+  await writable.close();
+  return fileName;
+}
+
+async function overwriteVirtualPicture(
+  fileName: string,
+  pngData: Uint8Array,
+): Promise<string> {
+  const blob = new Blob([pngData.buffer.slice(
+    pngData.byteOffset,
+    pngData.byteOffset + pngData.byteLength,
+  ) as ArrayBuffer], { type: 'image/png' });
+  const dataUrl = await blobToDataUrl(blob);
+  const cleanName = fileName.replace(/\.[^.]+$/, '');
+  await storeVirtualFile(`Picture/${fileName}`, { name: cleanName, dataUrl });
+  // 虚拟模式无法直接写入文件系统，触发下载
+  downloadBlob(blob, fileName);
+  return fileName;
+}
+
 /**
  * 请求工作区写权限（仅 filesystem 模式需要）
  */

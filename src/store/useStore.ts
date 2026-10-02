@@ -22,7 +22,10 @@ import {
   removeAssetFromWorkspace,
   exportToWorkspace,
   isFileSystemAccessSupported,
+  listWorkspacePictures,
+  overwritePictureInWorkspace,
   type Workspace as WorkspaceInfo,
+  type PictureEntry,
 } from '../engine/workspace';
 
 interface StoreState {
@@ -33,6 +36,11 @@ interface StoreState {
   workspaceLoading: boolean;
   workspaceError: string | null;
   theme: 'dark' | 'light';
+
+  // 替换模式（右侧 Picture 图库抽屉）
+  drawerOpen: boolean;
+  pictures: PictureEntry[];
+  selectedPicture: PictureEntry | null;
 
   updateConfig: (updater: (config: MessageWindowConfig) => MessageWindowConfig) => void;
   patchConfig: (partial: Partial<MessageWindowConfig>) => void;
@@ -50,6 +58,12 @@ interface StoreState {
   removeAssetFromWorkspace: (category: AssetCategory, name: string) => Promise<boolean>;
   exportPNGToWorkspace: (filename: string, pngData: Uint8Array) => Promise<string | null>;
   isFileSystemSupported: () => boolean;
+
+  // 替换模式操作
+  toggleDrawer: () => void;
+  refreshPictures: () => Promise<void>;
+  togglePictureSelection: (p: PictureEntry) => void;
+  overwritePictureToWorkspace: (fileName: string, pngData: Uint8Array) => Promise<string | null>;
 }
 
 const savedTheme = (typeof localStorage !== 'undefined' && localStorage.getItem('mywin-theme')) as 'dark' | 'light' | null;
@@ -64,6 +78,9 @@ export const useStore = create<StoreState>((set, get) => ({
   workspaceLoading: false,
   workspaceError: null,
   theme: savedTheme ?? 'dark',
+  drawerOpen: false,
+  pictures: [],
+  selectedPicture: null,
 
   updateConfig: (updater) =>
     set((state) => ({
@@ -114,11 +131,13 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const ws = await openWorkspace();
       if (ws) {
-        set({ workspace: ws });
+        set({ workspace: ws, selectedPicture: null });
         const sysAssets = await listWorkspaceAssets(ws, 'System');
         const faceAssets = await listWorkspaceAssets(ws, 'FaceSet');
+        const pictures = await listWorkspacePictures(ws);
         setWorkspaceAssets('System', sysAssets);
         setWorkspaceAssets('FaceSet', faceAssets);
+        set({ pictures });
       }
     } catch (e) {
       set({ workspaceError: String(e) || '打开工作区失败' });
@@ -134,8 +153,10 @@ export const useStore = create<StoreState>((set, get) => ({
         set({ workspace: ws });
         const sysAssets = await listWorkspaceAssets(ws, 'System');
         const faceAssets = await listWorkspaceAssets(ws, 'FaceSet');
+        const pictures = await listWorkspacePictures(ws);
         setWorkspaceAssets('System', sysAssets);
         setWorkspaceAssets('FaceSet', faceAssets);
+        set({ pictures });
       }
     } catch {
       // 静默失败，不影响应用正常使用
@@ -147,7 +168,13 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       await closeWorkspaceDir();
       clearWorkspaceAssets();
-      set({ workspace: null, workspaceError: null });
+      set({
+        workspace: null,
+        workspaceError: null,
+        drawerOpen: false,
+        pictures: [],
+        selectedPicture: null,
+      });
     } catch (e) {
       set({ workspaceError: String(e) || '关闭工作区失败' });
     } finally {
@@ -193,6 +220,44 @@ export const useStore = create<StoreState>((set, get) => ({
       return await exportToWorkspace(workspace, filename, pngData);
     } catch (e) {
       set({ workspaceError: String(e) || '导出到工作区失败' });
+      return null;
+    }
+  },
+
+  toggleDrawer: () => set((s) => ({ drawerOpen: !s.drawerOpen })),
+
+  refreshPictures: async () => {
+    const { workspace, selectedPicture } = get();
+    if (!workspace) {
+      set({ pictures: [], selectedPicture: null });
+      return;
+    }
+    try {
+      const pics = await listWorkspacePictures(workspace);
+      set({
+        pictures: pics,
+        // 同步选中项，使缩略图与对照图指向最新内容
+        selectedPicture: selectedPicture
+          ? pics.find((p) => p.fileName === selectedPicture.fileName) ?? null
+          : null,
+      });
+    } catch (e) {
+      set({ workspaceError: String(e) || '读取 Picture 目录失败' });
+    }
+  },
+
+  togglePictureSelection: (p) => {
+    const cur = get().selectedPicture;
+    set({ selectedPicture: cur && cur.fileName === p.fileName ? null : p });
+  },
+
+  overwritePictureToWorkspace: async (fileName: string, pngData: Uint8Array) => {
+    const { workspace } = get();
+    if (!workspace) return null;
+    try {
+      return await overwritePictureInWorkspace(workspace, fileName, pngData);
+    } catch (e) {
+      set({ workspaceError: String(e) || '覆盖图片失败' });
       return null;
     }
   },
