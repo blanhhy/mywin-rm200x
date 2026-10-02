@@ -3,16 +3,18 @@ import { RPG_CONSTANTS, type Padding } from '../../types';
 import { computeWindowSize } from '../../engine/messageWindow';
 
 export default function WindowTab() {
-  const { config, updateConfig, restoreStandardWindow } = useStore();
+  const { config, updateConfig, restoreStandardWindow, setFollowTargetPicture } = useStore();
+  const isFollow = config.followTargetPicture;
 
   const handleStandardToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
     const checked = e.target.checked;
     updateConfig((c) => ({
       ...c,
       standardWindow: checked,
-      // 进入标准模式时锁定尺寸和内边距
+      // 与"跟随目标图片"互斥；进入标准模式时锁定尺寸和内边距
       ...(checked
         ? {
+            followTargetPicture: false,
             width: RPG_CONSTANTS.MESSAGE_BOX_WIDTH,
             height: RPG_CONSTANTS.MESSAGE_BOX_HEIGHT,
             padding: {
@@ -62,7 +64,26 @@ export default function WindowTab() {
     updateConfig((c) => ({ ...c, padding: { ...c.padding, [key]: value } }));
   };
 
-  const disabled = config.standardWindow;
+  const handleRestore = () => {
+    if (isFollow) {
+      // 跟随模式下宽高由图片决定，还原只作用于内边距
+      updateConfig((c) => ({
+        ...c,
+        padding: {
+          top: RPG_CONSTANTS.BORDER_THICKNESS,
+          right: RPG_CONSTANTS.BORDER_THICKNESS,
+          bottom: RPG_CONSTANTS.BORDER_THICKNESS,
+          left: RPG_CONSTANTS.BORDER_THICKNESS,
+        } as Padding,
+      }));
+    } else {
+      restoreStandardWindow();
+    }
+  };
+
+  // 标准窗口时内边距锁定；标准窗口或跟随图片时宽高锁定（只读展示）
+  const paddingDisabled = config.standardWindow;
+  const sizeDisabled = config.standardWindow || isFollow;
 
   return (
     <div className="tab-content">
@@ -74,13 +95,21 @@ export default function WindowTab() {
             onChange={handleStandardToggle}
           />
           <span>使用标准窗口</span>
-          <small className="field-hint">
-            （关闭后可自定义）
-          </small>
         </label>
       </div>
 
-      <div className={`field-group ${disabled ? 'disabled' : ''}`}>
+      <div className="field-group">
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={isFollow}
+            onChange={(e) => setFollowTargetPicture(e.target.checked)}
+          />
+          <span>跟随目标图片</span>
+        </label>
+      </div>
+
+      <div className={`field-group ${sizeDisabled ? 'disabled' : ''}`}>
         <label className="field-label">宽度</label>
         <div className="size-row">
           <label className="radio-row">
@@ -89,7 +118,7 @@ export default function WindowTab() {
               name="width-mode"
               checked={config.width === 'auto'}
               onChange={() => handleWidthMode('auto')}
-              disabled={disabled}
+              disabled={sizeDisabled}
             />
             自适应
           </label>
@@ -99,7 +128,7 @@ export default function WindowTab() {
               name="width-mode"
               checked={typeof config.width === 'number'}
               onChange={() => handleWidthMode('number')}
-              disabled={disabled}
+              disabled={sizeDisabled}
             />
             数值
           </label>
@@ -111,13 +140,13 @@ export default function WindowTab() {
               onChange={handleWidthChange}
               min={16}
               max={1024}
-              disabled={disabled}
+              disabled={sizeDisabled}
             />
           )}
         </div>
       </div>
 
-      <div className={`field-group ${disabled ? 'disabled' : ''}`}>
+      <div className={`field-group ${sizeDisabled ? 'disabled' : ''}`}>
         <label className="field-label">高度</label>
         <div className="size-row">
           <label className="radio-row">
@@ -126,7 +155,7 @@ export default function WindowTab() {
               name="height-mode"
               checked={config.height === 'auto'}
               onChange={() => handleHeightMode('auto')}
-              disabled={disabled}
+              disabled={sizeDisabled}
             />
             自适应
           </label>
@@ -136,7 +165,7 @@ export default function WindowTab() {
               name="height-mode"
               checked={typeof config.height === 'number'}
               onChange={() => handleHeightMode('number')}
-              disabled={disabled}
+              disabled={sizeDisabled}
             />
             数值
           </label>
@@ -148,13 +177,13 @@ export default function WindowTab() {
               onChange={handleHeightChange}
               min={16}
               max={1024}
-              disabled={disabled}
+              disabled={sizeDisabled}
             />
           )}
         </div>
       </div>
 
-      <div className={`field-group ${disabled ? 'disabled' : ''}`}>
+      <div className={`field-group ${paddingDisabled ? 'disabled' : ''}`}>
         <label className="field-label">内边距</label>
         <div className="padding-cross">
           <div className="padding-cell padding-top">
@@ -164,7 +193,7 @@ export default function WindowTab() {
               className="number-input"
               value={config.padding.top}
               onChange={(e) => handlePaddingChange('top', Number(e.target.value))}
-              disabled={disabled}
+              disabled={paddingDisabled}
             />
           </div>
           <div className="padding-row">
@@ -175,7 +204,7 @@ export default function WindowTab() {
                 className="number-input"
                 value={config.padding.left}
                 onChange={(e) => handlePaddingChange('left', Number(e.target.value))}
-                disabled={disabled}
+                disabled={paddingDisabled}
               />
             </div>
             <div className="padding-center" />
@@ -186,7 +215,7 @@ export default function WindowTab() {
                 className="number-input"
                 value={config.padding.right}
                 onChange={(e) => handlePaddingChange('right', Number(e.target.value))}
-                disabled={disabled}
+                disabled={paddingDisabled}
               />
             </div>
           </div>
@@ -197,18 +226,20 @@ export default function WindowTab() {
               className="number-input"
               value={config.padding.bottom}
               onChange={(e) => handlePaddingChange('bottom', Number(e.target.value))}
-              disabled={disabled}
+              disabled={paddingDisabled}
             />
           </div>
         </div>
       </div>
 
       <div className="field-group">
-        <button className="action-btn" onClick={restoreStandardWindow} disabled={disabled}>
+        <button className="action-btn" onClick={handleRestore} disabled={paddingDisabled}>
           还原设置
         </button>
         <small className="field-hint">
-          取消自适应并还原成标准窗口的尺寸和内边距。
+          {isFollow
+            ? '还原内边距为标准窗口的值。'
+            : '取消自适应并还原成标准窗口的尺寸和内边距。'}
         </small>
       </div>
     </div>

@@ -13,6 +13,7 @@ import {
   type AssetCategory,
   type AssetEntry,
 } from '../engine/assetLoader';
+import { loadImage } from '../engine/messageWindow';
 import {
   openWorkspace,
   closeWorkspace as closeWorkspaceDir,
@@ -47,6 +48,7 @@ interface StoreState {
   setActiveTab: (tab: StoreState['activeTab']) => void;
   resetConfig: () => void;
   restoreStandardWindow: () => void;
+  setFollowTargetPicture: (v: boolean) => void;
   setInitialized: (v: boolean) => void;
   toggleTheme: () => void;
 
@@ -67,6 +69,29 @@ interface StoreState {
 }
 
 const savedTheme = (typeof localStorage !== 'undefined' && localStorage.getItem('mywin-theme')) as 'dark' | 'light' | null;
+
+/**
+ * 跟随目标图片：把宽高记录更新为图片尺寸
+ * （窗口设置只有这一份记录，跟随只是适时更新它）
+ */
+function syncFollowTargetSize(
+  picture: PictureEntry,
+  get: () => StoreState,
+  set: (partial: (s: StoreState) => Partial<StoreState>) => void,
+): void {
+  if (!get().config.followTargetPicture) return;
+  loadImage(picture.dataUrl)
+    .then((img) => {
+      // 加载期间选中项若已变化，丢弃过期结果
+      if (get().selectedPicture?.fileName !== picture.fileName) return;
+      set((s) => ({
+        config: { ...s.config, width: img.naturalWidth, height: img.naturalHeight },
+      }));
+    })
+    .catch(() => {
+      // 图片加载失败时保持原记录
+    });
+}
 
 export const useStore = create<StoreState>((set, get) => ({
   config: {
@@ -114,6 +139,20 @@ export const useStore = create<StoreState>((set, get) => ({
         } as Padding,
       },
     })),
+
+  setFollowTargetPicture: (v) => {
+    set((s) => ({
+      config: {
+        ...s.config,
+        followTargetPicture: v,
+        // 跟随模式下需退出标准窗口锁定，宽高才能跟随图片
+        ...(v ? { standardWindow: false } : {}),
+      },
+    }));
+    // 已有目标图片时，立即用它的尺寸刷新记录
+    const sel = get().selectedPicture;
+    if (v && sel) syncFollowTargetSize(sel, get, set);
+  },
 
   setInitialized: (v) => set({ initialized: v }),
 
@@ -248,7 +287,10 @@ export const useStore = create<StoreState>((set, get) => ({
 
   togglePictureSelection: (p) => {
     const cur = get().selectedPicture;
-    set({ selectedPicture: cur && cur.fileName === p.fileName ? null : p });
+    const next = cur && cur.fileName === p.fileName ? null : p;
+    set({ selectedPicture: next });
+    // 选中新图片后，跟随模式下的宽高记录随之更新
+    if (next) syncFollowTargetSize(next, get, set);
   },
 
   overwritePictureToWorkspace: async (fileName: string, pngData: Uint8Array) => {

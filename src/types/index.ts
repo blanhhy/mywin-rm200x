@@ -89,6 +89,8 @@ export interface MessageWindowConfig {
 
   // === 窗口设置 ===
   standardWindow: boolean; // true 时锁定为 RPG Runtime 标准尺寸/内边距
+  /** 跟随替换模式的目标图片：宽高记录随选中的图片更新，仅保留内边距可调 */
+  followTargetPicture: boolean;
   width: SizeValue;
   height: SizeValue;
   padding: Padding;
@@ -125,6 +127,7 @@ export const DEFAULT_CONFIG: MessageWindowConfig = {
   defaultColor: 0,
 
   standardWindow: true,
+  followTargetPicture: false,
   width: RPG_CONSTANTS.MESSAGE_BOX_WIDTH,
   height: RPG_CONSTANTS.MESSAGE_BOX_HEIGHT,
   padding: {
