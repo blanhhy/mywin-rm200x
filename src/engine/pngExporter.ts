@@ -2,7 +2,8 @@
 // 确保兼容 RPG Maker 2000/2003 的 PNG 导入要求
 // 透明色替换：将 alpha=0 的像素替换为指定的透明色（palette[0]）
 
-import { parseColor, recommendTransparentColor } from './colorUtils';
+import { parseColor, recommendTransparentColor, rgbToHex } from './colorUtils';
+import { parsePNGPalette0 } from './transparentColorInference';
 
 export interface ExportOptions {
   /** 透明色（CSS 字符串，如 "#003300"）；alpha=0 的像素会被替换为此色 */
@@ -395,6 +396,104 @@ export function canvasToRGBAPNG(canvas: HTMLCanvasElement): Promise<Uint8Array> 
       reader.readAsArrayBuffer(blob);
     }, 'image/png');
   });
+}
+
+// ── 透明色推荐（替换模式） ─────────────────────────────
+
+/** 解码 dataURL 中的字节数据 */
+function dataUrlToBytes(dataUrl: string): Uint8Array | null {
+  const comma = dataUrl.indexOf(',');
+  if (comma < 0) return null;
+  const meta = dataUrl.slice(0, comma);
+  const payload = dataUrl.slice(comma + 1);
+  if (!meta.includes('base64')) {
+    try {
+      return new TextEncoder().encode(decodeURIComponent(payload));
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const bin = atob(payload);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+function loadImageElement(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+/** 收集 canvas 中不透明像素使用的颜色集合（打包为 RGB 整数） */
+function collectOpaqueColors(canvas: HTMLCanvasElement): Set<number> {
+  const ctx = canvas.getContext('2d')!;
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const colors = new Set<number>();
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    colors.add((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
+  }
+  return colors;
+}
+
+/**
+ * 从对照图片推荐透明色（替换模式）
+ *
+ * 1. 8 位索引色 PNG：直接读取调色板 index 0（最准确，
+ *    兼容 RTP 素材与工具自身的导出产物）
+ * 2. 其他格式：统计不透明颜色的面积，从大到小尝试，
+ *    优先选择不与当前画面颜色冲突的颜色（避免导出时把画面误判为透明）
+ *
+ * 无法推荐时返回 null
+ */
+export async function recommendTransparentColorFromPicture(
+  dataUrl: string,
+  renderCanvas: HTMLCanvasElement,
+): Promise<string | null> {
+  // 策略 1：解析索引色 PNG 的调色板 index 0
+  const bytes = dataUrlToBytes(dataUrl);
+  if (bytes) {
+    const palette0 = parsePNGPalette0(bytes);
+    if (palette0) return palette0;
+  }
+
+  // 策略 2：按面积从大到小尝试
+  const img = await loadImageElement(dataUrl);
+  if (!img || !img.naturalWidth || !img.naturalHeight) return null;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(img, 0, 0);
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  // 统计各颜色面积（仅不透明像素）
+  const areas = new Map<number, number>();
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+    areas.set(key, (areas.get(key) ?? 0) + 1);
+  }
+
+  // 当前画面实际使用的颜色：作为透明色会导致这些画面像素被误判为透明
+  const renderColors = collectOpaqueColors(renderCanvas);
+
+  const sorted = [...areas.entries()].sort((a, b) => b[1] - a[1]);
+  for (const [key] of sorted) {
+    if (!renderColors.has(key)) {
+      return rgbToHex((key >> 16) & 0xff, (key >> 8) & 0xff, key & 0xff);
+    }
+  }
+  return null;
 }
 
 /**

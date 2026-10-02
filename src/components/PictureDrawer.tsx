@@ -1,12 +1,37 @@
 // 替换模式抽屉：展示工作区 Picture 目录中的图片
 // 单击选中（再次单击取消），选中后保存时将覆盖该图片
+import { useLayoutEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
+
+// 抽屉开合时会卸载重建，用模块级变量保留滚动位置
+// 以工作区实例为键：关闭工作区后再次打开会重置
+let savedScroll: { workspace: unknown; scrollTop: number } = {
+  workspace: null,
+  scrollTop: 0,
+};
 
 export default function PictureDrawer() {
   const pictures = useStore((s) => s.pictures);
   const selectedPicture = useStore((s) => s.selectedPicture);
   const togglePictureSelection = useStore((s) => s.togglePictureSelection);
   const refreshPictures = useStore((s) => s.refreshPictures);
+  const workspace = useStore((s) => s.workspace);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  // 绘制前恢复上次的滚动位置，避免闪烁
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+    if (savedScroll.workspace !== workspace) {
+      savedScroll = { workspace, scrollTop: 0 };
+    }
+    body.scrollTop = savedScroll.scrollTop;
+  }, [workspace]);
+
+  const handleScroll = () => {
+    const body = bodyRef.current;
+    if (body) savedScroll = { workspace, scrollTop: body.scrollTop };
+  };
 
   return (
     <aside className="picture-drawer">
@@ -21,7 +46,7 @@ export default function PictureDrawer() {
           ⟳
         </button>
       </div>
-      <div className="picture-drawer-body">
+      <div className="picture-drawer-body" ref={bodyRef} onScroll={handleScroll}>
         <p className="picture-drawer-hint">
           单击选中 Picture 目录中的图片，再次单击取消选中。<br />
           选中后保存将<b>覆盖</b>该图片。

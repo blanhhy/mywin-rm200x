@@ -9,10 +9,21 @@ import {
   countUniqueColors,
   downloadPNG,
   recommendTransparentColor,
+  recommendTransparentColorFromPicture,
 } from '../engine/pngExporter';
 
 /** 移动端基础缩放系数：让标准 320px 窗口在 1x 下适配约 360px CSS 宽屏幕 */
 const MOBILE_BASE_SCALE = 0.94;
+
+/** 读取图片尺寸（用于覆盖时的尺寸校验） */
+function loadImageSize(dataUrl: string): Promise<{ w: number; h: number } | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
 
 function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(() =>
@@ -46,6 +57,10 @@ export default function Preview() {
   const [exportError, setExportError] = useState(false);
   const [colorOverflow, setColorOverflow] = useState<{ count: number } | null>(null);
   const [compareDims, setCompareDims] = useState<{ w: number; h: number } | null>(null);
+  const [sizeMismatch, setSizeMismatch] = useState<{
+    target: { w: number; h: number };
+    mode: 'indexed' | 'rgba';
+  } | null>(null);
   const isMobile = useIsMobile();
 
   // 切换对照图片时重置尺寸缓存
@@ -62,6 +77,19 @@ export default function Preview() {
     ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     ctx.drawImage(canvas, 0, 0);
   }, [config]);
+
+  // 选中对照图片时，自动采用该图片上的适合颜色作为透明色
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!selectedPicture || !canvas) return;
+    let cancelled = false;
+    recommendTransparentColorFromPicture(selectedPicture.dataUrl, canvas).then((c) => {
+      if (!cancelled && c) setTransparentColor(c);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPicture]);
 
   const { width, height } = useMemo(() => computeWindowSize(config), [config]);
 
@@ -81,14 +109,25 @@ export default function Preview() {
   }, [config.colorSystem]);
 
   // 实际执行保存（8 位索引色或 RGBA）
-  const doSave = async (mode: 'indexed' | 'rgba') => {
-    if (!canvasRef.current) return;
+  const doSave = async (mode: 'indexed' | 'rgba', force = false) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // 替换模式下校验目标图片尺寸是否与当前画面完全一致
+    if (selectedPicture && workspace && !force) {
+      const target = compareDims ?? (await loadImageSize(selectedPicture.dataUrl));
+      if (target && (target.w !== canvas.width || target.h !== canvas.height)) {
+        setSizeMismatch({ target, mode });
+        return;
+      }
+    }
+
     try {
       let pngData: Uint8Array;
       if (mode === 'rgba') {
-        pngData = await canvasToRGBAPNG(canvasRef.current);
+        pngData = await canvasToRGBAPNG(canvas);
       } else {
-        pngData = await canvasTo8bitPNG(canvasRef.current, { transparentColor });
+        pngData = await canvasTo8bitPNG(canvas, { transparentColor });
       }
       const filename = `mywin-${Date.now()}.png`;
       if (workspace) {
@@ -186,7 +225,20 @@ export default function Preview() {
           />
           <button
             className="recommend-btn"
-            onClick={() => setTransparentColor(recommendTransparentColor())}
+            onClick={async () => {
+              const canvas = canvasRef.current;
+              if (selectedPicture && canvas) {
+                const c = await recommendTransparentColorFromPicture(
+                  selectedPicture.dataUrl,
+                  canvas,
+                );
+                if (c) {
+                  setTransparentColor(c);
+                  return;
+                }
+              }
+              setTransparentColor(recommendTransparentColor());
+            }}
           >
             自动
           </button>
@@ -200,7 +252,10 @@ export default function Preview() {
       {selectedPicture && (
         <div className="compare-section">
           <div className="compare-label">
-            目标图片： Picture/{selectedPicture.fileName}
+            目标图片：{compareDims ? `${compareDims.w} × ${compareDims.h}` : '…'}
+            {compareDims && (compareDims.w !== width || compareDims.h !== height) && (
+              <span className="compare-warn">（与当前尺寸不一致）</span>
+            )}
           </div>
           <div className="canvas-wrapper">
             <img
@@ -272,6 +327,45 @@ export default function Preview() {
               <strong>扩展色彩</strong>：直接以 RGBA 真彩色导出
             </li>
           </ul>
+        </div>
+      </Modal>
+
+      <Modal
+        open={sizeMismatch !== null}
+        title="尺寸不一致"
+        onClose={() => setSizeMismatch(null)}
+        width={440}
+        footer={
+          <>
+            <button
+              className="modal-btn"
+              onClick={() => {
+                const mode = sizeMismatch?.mode ?? 'indexed';
+                setSizeMismatch(null);
+                doSave(mode, true);
+              }}
+            >
+              仍然覆盖
+            </button>
+            <button className="modal-btn primary" onClick={() => setSizeMismatch(null)}>
+              返回调整
+            </button>
+          </>
+        }
+      >
+        <div className="color-overflow-body">
+          <p>
+            目标图片尺寸为{' '}
+            <strong>
+              {sizeMismatch?.target.w} × {sizeMismatch?.target.h}
+            </strong>
+            ，当前画面为{' '}
+            <strong>
+              {width} × {height}
+            </strong>
+            ，两者不一致。<br />
+            覆盖后游戏中的显示尺寸将随之改变，建议调整窗口尺寸后再保存。
+          </p>
         </div>
       </Modal>
     </div>

@@ -1261,6 +1261,10 @@
   color: var(--color-text-muted);
 }
 
+.compare-warn {
+  color: var(--color-warning);
+}
+
 .compare-img {
   display: block;
   image-rendering: pixelated;
