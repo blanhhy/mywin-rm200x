@@ -63,8 +63,15 @@ export default function PictureDrawer() {
                   className={`picture-item ${selected ? 'selected' : ''}`}
                   onClick={() => togglePictureSelection(p)}
                   title={selected ? `${p.fileName}（单击取消选中）` : `选中以替换：${p.fileName}`}
+                  draggable
+                  onDragStart={(e) => {
+                    // 供【背景】页"参考已有"模式接收
+                    e.dataTransfer.setData('application/x-mywin-picture', p.fileName);
+                    e.dataTransfer.setData('text/plain', p.fileName);
+                    e.dataTransfer.effectAllowed = 'copy';
+                  }}
                 >
-                  <img className="picture-thumb" src={p.dataUrl} alt={p.fileName} />
+                  <img className="picture-thumb" src={p.dataUrl} alt={p.fileName} draggable={false} />
                   <span className="picture-name">{p.fileName}</span>
                 </button>
               );

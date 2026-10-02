@@ -5,9 +5,19 @@ import { parsePNGPalette0 } from '../../engine/transparentColorInference';
 import { type BackgroundMode, type StretchMode, type SystemImageRef } from '../../types';
 import SystemPicker, { type SystemPickerValue } from '../pickers/SystemPicker';
 
+/** 将 data URL 解码为字节，用于解析 PNG 调色板 */
+function dataUrlToBytes(dataUrl: string): Uint8Array {
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
 export default function BackgroundTab() {
   const { config, updateConfig } = useStore();
   const [systemPickerOpen, setSystemPickerOpen] = useState(false);
+  const [referenceDragOver, setReferenceDragOver] = useState(false);
 
   const handleModeChange = (mode: BackgroundMode) => {
     updateConfig((c) => ({ ...c, backgroundMode: mode }));
@@ -28,10 +38,23 @@ export default function BackgroundTab() {
     }));
   };
 
+  /** 应用参考图片（上传与拖拽共用）：重置底纹推断区域，并按调色板初始化透明色 */
+  const applyReferenceImage = (img: HTMLImageElement, palette0: string | null) => {
+    const t = config.backgroundImageBorderThickness;
+    updateConfig((c) => ({
+      ...c,
+      backgroundImage: img,
+      // 更换图片时，重置 tile rect 为"边框内左上角 4×4"
+      backgroundImageTileRect: { x: t, y: t, w: 4, h: 4 },
+      // 自动检测到调色板 idx-0 则默认启用透明色，否则不启用
+      backgroundImageTransparentColor: palette0,
+      backgroundImageUseTransparentColor: palette0 !== null,
+    }));
+  };
+
   const handleImageUpload = async (file: File) => {
     const url = URL.createObjectURL(file);
     const img = await loadImage(url);
-    const t = config.backgroundImageBorderThickness;
 
     // 尝试从 PNG 调色板提取 idx-0 作为透明色
     let palette0: string | null = null;
@@ -42,15 +65,37 @@ export default function BackgroundTab() {
       // 非 PNG 或解析失败，不使用透明色
     }
 
-    updateConfig((c) => ({
-      ...c,
-      backgroundImage: img,
-      // 上传新图片时，重置 tile rect 为"边框内左上角 4×4"
-      backgroundImageTileRect: { x: t, y: t, w: 4, h: 4 },
-      // 自动检测到调色板 idx-0 则默认启用透明色，否则不启用
-      backgroundImageTransparentColor: palette0,
-      backgroundImageUseTransparentColor: palette0 !== null,
-    }));
+    applyReferenceImage(img, palette0);
+  };
+
+  const handleReferenceDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    if (!e.dataTransfer.types.includes('application/x-mywin-picture')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setReferenceDragOver(true);
+  };
+
+  const handleReferenceDragLeave = () => setReferenceDragOver(false);
+
+  const handleReferenceDrop = async (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setReferenceDragOver(false);
+    const fileName =
+      e.dataTransfer.getData('application/x-mywin-picture') ||
+      e.dataTransfer.getData('text/plain');
+    if (!fileName) return;
+    const pic = useStore.getState().pictures.find((p) => p.fileName === fileName);
+    if (!pic) return;
+
+    const img = await loadImage(pic.dataUrl);
+    // 解析 PNG 调色板 idx-0 作为透明色
+    let palette0: string | null = null;
+    try {
+      palette0 = parsePNGPalette0(dataUrlToBytes(pic.dataUrl));
+    } catch {
+      // 解析失败，不使用透明色
+    }
+    applyReferenceImage(img, palette0);
   };
 
   const handleBorderThickness = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -193,8 +238,13 @@ export default function BackgroundTab() {
         <>
           <div className="field-group">
             <label className="field-label">参考图片</label>
-            <label className="upload-btn">
-              选择一张Message窗口图片...
+            <label
+              className={`upload-btn ${referenceDragOver ? 'drag-over' : ''}`}
+              onDragOver={handleReferenceDragOver}
+              onDragLeave={handleReferenceDragLeave}
+              onDrop={handleReferenceDrop}
+            >
+              选择 Message 图片或从右侧图库拖入…
               <input
                 type="file"
                 accept="image/png,image/bmp"
