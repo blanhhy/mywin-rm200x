@@ -83,11 +83,11 @@ export class SystemImageRenderer {
   /**
    * 获取第 N 个颜色块在 System 图中的取样起点（src_x, src_y）
    *
-   * 色块为 16×16，字符实际区域 12×12（字形 11×11 + 右下 1px 阴影），
-   * 即"把 12×12 上下左右各扩 2 像素"正好铺满 16×16，因此取样起点
-   * 取色块内缩 2px 的居中位置：
+   * 与 EasyRPG 的 Font::RenderImpl 完全一致（font.cpp:877-878）：
    *   src_x = color % 10 * 16 + 2
-   *   src_y = color / 10 * 16 + 48 + 2
+   *   src_y = color / 10 * 16 + 48 + 16 - 12 - offset.y
+   *
+   * 对于 12px 位图字形 offset.y=0，因此 src_y = color / 10 * 16 + 52
    *
    * 文字每个点亮像素 (dx, dy) 对应取 System 图 (src_x + dx, src_y + dy) 的颜色。
    * 色块本身是 16×16 区域，每个像素颜色可能不同（渐变/纹理），
@@ -98,19 +98,19 @@ export class SystemImageRenderer {
     const col = safeIdx % 10;
     const row = Math.floor(safeIdx / 10);
     return {
-      x: col * 16 + 2, // 左侧留 2px
-      y: 48 + row * 16 + 2, // 上侧留 2px（12×12 居中于 16×16）
+      x: col * 16 + 2,
+      y: 48 + row * 16 + 4, // 16 - 12 - 0 (offset.y for bitmap fonts)
     };
   }
 
   /**
    * 获取阴影色块在 System 图中的取样起点
    *
-   * 阴影色块位于 System 图 (16, 32)，16×16 区域，与主色块采用同一
-   * 居中规则：12×12 区域居中，故起点为 (16 + 2, 32 + 2)
+   * 阴影色块位于 System 图 (16, 32)，16×16 区域（font.cpp:830, 874）
+   * 与主色块不同，阴影取样无 +2 / +4 偏移
    */
   getShadowSrcPosition(): { x: number; y: number } {
-    return { x: 18, y: 34 };
+    return { x: 16, y: 32 };
   }
 
   /**
