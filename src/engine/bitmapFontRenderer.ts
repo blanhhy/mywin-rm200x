@@ -280,11 +280,12 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
     for (const seg of line.segments) {
       // 填充分隔：不画字形，只占位并记录区域，由调用方填充参考图像素
       if (seg.fillWidth !== undefined) {
+        const expandY = seg.fillExpandY ?? 0;
         onFillRegion?.({
           x: curX,
-          y: lineY,
+          y: lineY - expandY,
           w: seg.fillWidth,
-          h: RPG_CONSTANTS.FONT_HEIGHT,
+          h: RPG_CONSTANTS.FONT_HEIGHT + expandY * 2,
         });
         curX += seg.fillWidth;
         continue;
@@ -321,8 +322,9 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
 //   \>             加速显示        → 丢弃
 //   \<             减速显示        → 丢弃
 //   \r             mywin 专用填充分隔：占半角宽度（6px），
+//   \r[n]          带参数时区域高度上下各扩展 n 像素
+//   \p / \p[n]     mywin 专用填充分隔：占 1px 宽、字符高度，带参数同上
 //                  覆盖写模式下由调用方从参考图取该位置的像素
-//   \p             mywin 专用填充分隔：占 1px 宽、字符高度，同上
 //   $A-$Z / $a-$z  ExFont 图标
 
 interface TextSegment {
@@ -331,6 +333,8 @@ interface TextSegment {
   color: number;
   /** \r / \p 填充标记的宽度（6 / 1 像素）；普通文字时为 undefined */
   fillWidth?: number;
+  /** \r[n] / \p[n] 的上下扩展量（像素），无参数时为 0 */
+  fillExpandY?: number;
 }
 
 interface ParsedLine {
@@ -430,18 +434,30 @@ function parseText(text: string, defaultColor: number = 0): ParsedLine[] {
           continue;
         }
         // mywin 专用填充标记（与 RPG Maker 无关，仅覆盖写模式生效）：
-        //   \r 占半角字符宽度（6px），\p 占 1px 宽，高度均为字符高度
+        //   \r 占半角字符宽度（6px），\p 占 1px 宽，高度均为字符高度；
+        //   带参数 \r[n] / \p[n] 时区域高度上下各扩展 n 像素
         if (next === 'r' || next === 'p') {
           if (buf) {
             segments.push({ text: buf, color: currentColor });
             buf = '';
           }
+          let expandY = 0;
+          let nextIndex = i + 2;
+          if (rawLine[i + 2] === '[') {
+            const closeIdx = rawLine.indexOf(']', i + 3);
+            if (closeIdx !== -1) {
+              const num = parseInt(rawLine.slice(i + 3, closeIdx), 10);
+              expandY = Number.isNaN(num) ? 0 : Math.max(0, num);
+              nextIndex = closeIdx + 1;
+            }
+          }
           segments.push({
             text: '',
             color: currentColor,
             fillWidth: next === 'r' ? RPG_CONSTANTS.HALF_WIDTH : 1,
+            fillExpandY: expandY,
           });
-          i += 2;
+          i = nextIndex;
           continue;
         }
         // 无参数控制字符：\! \. \| \^ \> \< → 丢弃
