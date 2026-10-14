@@ -53,6 +53,7 @@ export default function SystemPicker({
 }: SystemPickerProps) {
   const assets = useAssets('System');
   const workspace = useStore((s) => s.workspace);
+  const refreshAssetsIfStale = useStore((s) => s.refreshAssetsIfStale);
   const saveAssetToWorkspace = useStore((s) => s.saveAssetToWorkspace);
   const removeAssetFromWorkspace = useStore((s) => s.removeAssetFromWorkspace);
   const [selectedName, setSelectedName] = useState<string | null>(currentName);
@@ -60,6 +61,11 @@ export default function SystemPicker({
   const [transparentColor, setTransparentColor] = useState(currentTransparentColor);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 打开选择器时，若距上次重载已足够久则重新读取素材目录
+  useEffect(() => {
+    if (open) refreshAssetsIfStale();
+  }, [open, refreshAssetsIfStale]);
 
   // 当模态框打开或 currentName 变化时同步
   useEffect(() => {

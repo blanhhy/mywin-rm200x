@@ -49,6 +49,7 @@ export default function FaceSetPicker({
 }: FaceSetPickerProps) {
   const assets = useAssets('FaceSet');
   const workspace = useStore((s) => s.workspace);
+  const refreshAssetsIfStale = useStore((s) => s.refreshAssetsIfStale);
   const saveAssetToWorkspace = useStore((s) => s.saveAssetToWorkspace);
   const removeAssetFromWorkspace = useStore((s) => s.removeAssetFromWorkspace);
   const [selectedName, setSelectedName] = useState<string | null>(currentName);
@@ -56,6 +57,11 @@ export default function FaceSetPicker({
   const [faceIndex, setFaceIndex] = useState(currentFaceIndex);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 打开选择器时，若距上次重载已足够久则重新读取素材目录
+  useEffect(() => {
+    if (open) refreshAssetsIfStale();
+  }, [open, refreshAssetsIfStale]);
 
   useEffect(() => {
     if (open) {

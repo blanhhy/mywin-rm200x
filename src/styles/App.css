@@ -50,6 +50,23 @@
   color: var(--color-text);
 }
 
+.reset-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.reset-btn:disabled:hover {
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+/* 顶栏刷新按钮（图标） */
+.refresh-btn {
+  padding: 4px 9px;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .app-main {
   display: flex;
   flex: 1;

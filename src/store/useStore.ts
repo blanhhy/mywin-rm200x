@@ -36,6 +36,7 @@ interface StoreState {
   workspace: WorkspaceInfo | null;
   workspaceLoading: boolean;
   workspaceError: string | null;
+  assetRefreshing: boolean;
   theme: 'dark' | 'light';
 
   // 替换模式（右侧 Picture 图库抽屉）
@@ -60,6 +61,10 @@ interface StoreState {
   removeAssetFromWorkspace: (category: AssetCategory, name: string) => Promise<boolean>;
   exportPNGToWorkspace: (filename: string, pngData: Uint8Array) => Promise<string | null>;
   isFileSystemSupported: () => boolean;
+  /** 重载工作区素材目录（System / FaceSet / Picture），不改动任何表单配置 */
+  refreshAssets: () => Promise<void>;
+  /** 距上次重载超过最小间隔时才重载（素材选择器打开时调用） */
+  refreshAssetsIfStale: () => void;
 
   // 替换模式操作
   toggleDrawer: () => void;
@@ -69,6 +74,17 @@ interface StoreState {
 }
 
 const savedTheme = (typeof localStorage !== 'undefined' && localStorage.getItem('mywin-theme')) as 'dark' | 'light' | null;
+
+/** 素材目录自动重载的最小间隔，避免短时间内反复读取磁盘 */
+const ASSET_REFRESH_MIN_INTERVAL_MS = 3000;
+
+/** 上次重载素材目录的时间（仅用于节流，不参与渲染） */
+let lastAssetRefreshAt = 0;
+
+/** 记录一次素材目录重载时间点 */
+function markAssetsRefreshed(): void {
+  lastAssetRefreshAt = Date.now();
+}
 
 /**
  * 跟随目标图片：把宽高记录更新为图片尺寸
@@ -102,6 +118,7 @@ export const useStore = create<StoreState>((set, get) => ({
   workspace: null,
   workspaceLoading: false,
   workspaceError: null,
+  assetRefreshing: false,
   theme: savedTheme ?? 'dark',
   drawerOpen: false,
   pictures: [],
@@ -165,6 +182,33 @@ export const useStore = create<StoreState>((set, get) => ({
 
   isFileSystemSupported: () => isFileSystemAccessSupported(),
 
+  refreshAssets: async () => {
+    const { workspace, assetRefreshing } = get();
+    if (!workspace || assetRefreshing) return;
+    set({ assetRefreshing: true, workspaceError: null });
+    try {
+      // 外部对素材目录的增删改不会被浏览器感知，只能重新读取
+      const [sysAssets, faceAssets] = await Promise.all([
+        listWorkspaceAssets(workspace, 'System'),
+        listWorkspaceAssets(workspace, 'FaceSet'),
+      ]);
+      setWorkspaceAssets('System', sysAssets);
+      setWorkspaceAssets('FaceSet', faceAssets);
+      await get().refreshPictures();
+      markAssetsRefreshed();
+    } catch (e) {
+      set({ workspaceError: String(e) || '刷新素材目录失败' });
+    } finally {
+      set({ assetRefreshing: false });
+    }
+  },
+
+  refreshAssetsIfStale: () => {
+    if (!get().workspace) return;
+    if (Date.now() - lastAssetRefreshAt < ASSET_REFRESH_MIN_INTERVAL_MS) return;
+    void get().refreshAssets();
+  },
+
   openWorkspace: async () => {
     set({ workspaceLoading: true, workspaceError: null });
     try {
@@ -177,6 +221,7 @@ export const useStore = create<StoreState>((set, get) => ({
         setWorkspaceAssets('System', sysAssets);
         setWorkspaceAssets('FaceSet', faceAssets);
         set({ pictures });
+        markAssetsRefreshed();
       }
     } catch (e) {
       set({ workspaceError: String(e) || '打开工作区失败' });
@@ -196,6 +241,7 @@ export const useStore = create<StoreState>((set, get) => ({
         setWorkspaceAssets('System', sysAssets);
         setWorkspaceAssets('FaceSet', faceAssets);
         set({ pictures });
+        markAssetsRefreshed();
       }
     } catch {
       // 静默失败，不影响应用正常使用
