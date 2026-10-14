@@ -7,13 +7,17 @@ import {
   type LoadedImage,
 } from '../types';
 import { SystemImageRenderer, InferredImageRenderer, type WindowRenderer } from './systemImage';
-import { renderBitmapText, measureBitmapTextBounds, type BitmapFontId } from './bitmapFontRenderer';
+import { renderBitmapText, measureBitmapTextBounds, type BitmapFontId, type FillRegion } from './bitmapFontRenderer';
+
+export type { FillRegion };
 
 /** 渲染结果 */
 export interface RenderResult {
   canvas: HTMLCanvasElement;
   width: number;
   height: number;
+  /** \r / \p（mywin 专用）标出的区域：覆盖写模式下由调用方从参考图取对应像素填充 */
+  fillRegions: FillRegion[];
 }
 
 /**
@@ -207,6 +211,7 @@ export function renderMessageWindow(config: MessageWindowConfig): RenderResult {
   drawFace(ctx, config, contentX, contentY);
 
   // 5. 绘制文字
+  const fillRegions: FillRegion[] = [];
   const colorRenderer = createColorRenderer(config);
   if (colorRenderer) {
     const textX = contentX + getTextStartX(config);
@@ -225,10 +230,11 @@ export function renderMessageWindow(config: MessageWindowConfig): RenderResult {
       getColorSrcPos: (idx) => colorRenderer.getColorSrcPosition(idx),
       shadowSrcPos: colorRenderer.getShadowSrcPosition(),
       fontId: inferDefaultFontId(),
+      onFillRegion: (region) => fillRegions.push(region),
     });
   }
 
-  return { canvas, width, height };
+  return { canvas, width, height, fillRegions };
 }
 
 /**

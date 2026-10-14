@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { renderMessageWindow, computeWindowSize } from '../engine/messageWindow';
+import { renderMessageWindow, computeWindowSize, loadImage } from '../engine/messageWindow';
 import { SystemImageRenderer } from '../engine/systemImage';
 import Modal from './Modal';
 import {
@@ -60,6 +60,8 @@ export default function Preview() {
   const [exportError, setExportError] = useState(false);
   const [colorOverflow, setColorOverflow] = useState<{ count: number } | null>(null);
   const [compareDims, setCompareDims] = useState<{ w: number; h: number } | null>(null);
+  /** 目标图片（覆盖写模式的参考图），用于 \r / \p 填充 */
+  const [referenceImage, setReferenceImage] = useState<HTMLImageElement | null>(null);
   const [sizeMismatch, setSizeMismatch] = useState<{
     target: { w: number; h: number };
     mode: 'indexed' | 'rgba';
@@ -71,11 +73,30 @@ export default function Preview() {
     setCompareDims(null);
   }, [selectedPicture?.fileName]);
 
+  // 覆盖写模式：加载目标图片作为参考图（供 \r / \p 取像素）
+  useEffect(() => {
+    if (!selectedPicture) {
+      setReferenceImage(null);
+      return;
+    }
+    let cancelled = false;
+    loadImage(selectedPicture.dataUrl)
+      .then((img) => {
+        if (!cancelled) setReferenceImage(img);
+      })
+      .catch(() => {
+        if (!cancelled) setReferenceImage(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPicture]);
+
   // 实时渲染
   useEffect(() => {
     const out = canvasRef.current;
     if (!out) return;
-    const { canvas } = renderMessageWindow(config);
+    const { canvas, fillRegions } = renderMessageWindow(config);
     const ctx = out.getContext('2d')!;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, out.width, out.height);
@@ -85,7 +106,13 @@ export default function Preview() {
       ctx.fillRect(0, 0, out.width, out.height);
     }
     ctx.drawImage(canvas, 0, 0);
-  }, [config, showTransparentColor, transparentColor]);
+    // \r / \p：从参考图相同位置取像素填充（仅覆盖写模式生效）
+    if (referenceImage) {
+      for (const r of fillRegions) {
+        ctx.drawImage(referenceImage, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+      }
+    }
+  }, [config, showTransparentColor, transparentColor, referenceImage]);
 
   // 选中对照图片时，自动采用该图片上的适合颜色作为透明色
   useEffect(() => {

@@ -203,6 +203,10 @@ export function measureBitmapTextBounds(
   for (const line of lines) {
     let w = 0;
     for (const seg of line.segments) {
+      if (seg.fillWidth !== undefined) {
+        w += seg.fillWidth;
+        continue;
+      }
       for (const ch of seg.text) {
         const code = ch.codePointAt(0) || 0;
         const { isFull } = findGlyph(fontId, code);
@@ -236,6 +240,8 @@ export interface BitmapTextRenderOptions {
   drawShadow?: boolean;
   lineHeight?: number;
   fontId: BitmapFontId;
+  /** 收集 \r / \p 标出的填充区域（画布坐标） */
+  onFillRegion?: (region: FillRegion) => void;
 }
 
 /**
@@ -260,6 +266,7 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
     drawShadow = true,
     lineHeight = RPG_CONSTANTS.LINE_HEIGHT,
     fontId,
+    onFillRegion,
   } = opts;
 
   // 解析颜色控制符（复用 textRenderer 的解析逻辑）
@@ -271,6 +278,17 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
     const lineY = y + li * lineHeight;
     let curX = x;
     for (const seg of line.segments) {
+      // 填充分隔：不画字形，只占位并记录区域，由调用方填充参考图像素
+      if (seg.fillWidth !== undefined) {
+        onFillRegion?.({
+          x: curX,
+          y: lineY,
+          w: seg.fillWidth,
+          h: RPG_CONSTANTS.FONT_HEIGHT,
+        });
+        curX += seg.fillWidth;
+        continue;
+      }
       const srcPos = getColorSrcPos(seg.color);
       for (const ch of seg.text) {
         const mainGlyph = getBitmapGlyph(ch, srcPos.x, srcPos.y, systemCanvas, fontId, rendererId);
@@ -302,15 +320,29 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
 //   \_             半角空格        → ' '
 //   \>             加速显示        → 丢弃
 //   \<             减速显示        → 丢弃
+//   \r             mywin 专用填充分隔：占半角宽度（6px），
+//                  覆盖写模式下由调用方从参考图取该位置的像素
+//   \p             mywin 专用填充分隔：占 1px 宽、字符高度，同上
 //   $A-$Z / $a-$z  ExFont 图标
 
 interface TextSegment {
+  /** 普通文字内容（填充标记为空串） */
   text: string;
   color: number;
+  /** \r / \p 填充标记的宽度（6 / 1 像素）；普通文字时为 undefined */
+  fillWidth?: number;
 }
 
 interface ParsedLine {
   segments: TextSegment[];
+}
+
+/** \r / \p 标记出的填充区域（画布坐标） */
+export interface FillRegion {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 function parseText(text: string, defaultColor: number = 0): ParsedLine[] {
@@ -394,6 +426,21 @@ function parseText(text: string, defaultColor: number = 0): ParsedLine[] {
         if (next === '$') {
           // \$ 显示金钱，保留原始代码
           buf += '\\$';
+          i += 2;
+          continue;
+        }
+        // mywin 专用填充标记（与 RPG Maker 无关，仅覆盖写模式生效）：
+        //   \r 占半角字符宽度（6px），\p 占 1px 宽，高度均为字符高度
+        if (next === 'r' || next === 'p') {
+          if (buf) {
+            segments.push({ text: buf, color: currentColor });
+            buf = '';
+          }
+          segments.push({
+            text: '',
+            color: currentColor,
+            fillWidth: next === 'r' ? RPG_CONSTANTS.HALF_WIDTH : 1,
+          });
           i += 2;
           continue;
         }
