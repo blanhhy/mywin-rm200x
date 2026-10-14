@@ -52,6 +52,8 @@ export default function Preview() {
   const refreshPictures = useStore((s) => s.refreshPictures);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [transparentColor, setTransparentColor] = useState(recommendTransparentColor());
+  /** 勾选后，预览把透明区域显示为透明色，而不是棋盘格下的真透明 */
+  const [showTransparentColor, setShowTransparentColor] = useState(false);
   const [zoom, setZoom] = useState(2);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [exportError, setExportError] = useState(false);
@@ -70,13 +72,19 @@ export default function Preview() {
 
   // 实时渲染
   useEffect(() => {
-    if (!canvasRef.current) return;
+    const out = canvasRef.current;
+    if (!out) return;
     const { canvas } = renderMessageWindow(config);
-    const ctx = canvasRef.current.getContext('2d')!;
+    const ctx = out.getContext('2d')!;
     ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    ctx.clearRect(0, 0, out.width, out.height);
+    // 勾选"预览"时，透明区域改用透明色填充（与导出的透明色效果一致）
+    if (showTransparentColor) {
+      ctx.fillStyle = transparentColor;
+      ctx.fillRect(0, 0, out.width, out.height);
+    }
     ctx.drawImage(canvas, 0, 0);
-  }, [config]);
+  }, [config, showTransparentColor, transparentColor]);
 
   // 选中对照图片时，自动采用该图片上的适合颜色作为透明色
   useEffect(() => {
@@ -242,6 +250,17 @@ export default function Preview() {
           >
             自动
           </button>
+        </label>
+        <label
+          className="checkbox-row"
+          title="透明区域显示为透明色（与导出效果一致）"
+        >
+          <input
+            type="checkbox"
+            checked={showTransparentColor}
+            onChange={(e) => setShowTransparentColor(e.target.checked)}
+          />
+          预览
         </label>
         <button className="export-btn" onClick={handleExport}>
           {selectedPicture ? '覆盖保存' : workspace ? '保存到工作区' : '保存为 PNG'}
