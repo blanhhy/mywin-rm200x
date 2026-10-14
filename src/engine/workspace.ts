@@ -61,7 +61,7 @@ function openDB(): Promise<IDBDatabase> {
 
 // --- filesystem 模式句柄 ---
 
-async function saveHandle(handle: FileSystemDirectoryHandle): Promise<void> {
+export async function saveHandle(handle: FileSystemDirectoryHandle): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(INDEXEDDB_STORE, 'readwrite');
@@ -89,6 +89,86 @@ async function clearHandle(): Promise<void> {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+// --- 最近打开的工作区 ---
+//
+// 只对 filesystem 模式有意义：句柄可以复用，因此能直接重新打开。
+// virtual 模式（webkitdirectory）拿不到句柄，重新打开必须再次选择文件夹。
+// 注意：API 不提供完整路径，只能拿到文件夹名。
+
+const RECENTS_KEY = 'workspace-recents';
+const MAX_RECENT_WORKSPACES = 5;
+
+/** 最近打开的工作区条目 */
+export interface RecentWorkspace {
+  /** 文件夹名（浏览器不提供完整路径） */
+  name: string;
+  /** 目录句柄，可用于重新打开 */
+  handle: FileSystemDirectoryHandle;
+  lastAccessed: number;
+}
+
+async function loadRecentList(): Promise<RecentWorkspace[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(INDEXEDDB_STORE, 'readonly');
+    const req = tx.objectStore(INDEXEDDB_STORE).get(RECENTS_KEY);
+    req.onsuccess = () => resolve((req.result as RecentWorkspace[] | undefined) ?? []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveRecentList(list: RecentWorkspace[]): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(INDEXEDDB_STORE, 'readwrite');
+    tx.objectStore(INDEXEDDB_STORE).put(list, RECENTS_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** 判断两个句柄是否指向同一目录（失效句柄视为不同） */
+export async function isSameDirectoryHandle(
+  a: FileSystemDirectoryHandle,
+  b: FileSystemDirectoryHandle,
+): Promise<boolean> {
+  try {
+    return await a.isSameEntry(b);
+  } catch {
+    return false;
+  }
+}
+
+/** 列出最近打开的工作区（按最近使用排序） */
+export async function listRecentWorkspaces(): Promise<RecentWorkspace[]> {
+  try {
+    return await loadRecentList();
+  } catch {
+    return [];
+  }
+}
+
+/** 记录一次最近打开的工作区（去重后置顶，最多保留 MAX_RECENT_WORKSPACES 条） */
+export async function addRecentWorkspace(handle: FileSystemDirectoryHandle): Promise<void> {
+  const list = await loadRecentList();
+  const kept: RecentWorkspace[] = [];
+  for (const item of list) {
+    if (!(await isSameDirectoryHandle(item.handle, handle))) kept.push(item);
+  }
+  kept.unshift({ name: handle.name, handle, lastAccessed: Date.now() });
+  await saveRecentList(kept.slice(0, MAX_RECENT_WORKSPACES));
+}
+
+/** 从最近列表移除某个工作区（目录失效时清理） */
+export async function removeRecentWorkspace(handle: FileSystemDirectoryHandle): Promise<void> {
+  const list = await loadRecentList();
+  const kept: RecentWorkspace[] = [];
+  for (const item of list) {
+    if (!(await isSameDirectoryHandle(item.handle, handle))) kept.push(item);
+  }
+  await saveRecentList(kept);
 }
 
 // --- virtual 模式元数据与文件 ---
@@ -259,17 +339,25 @@ export async function tryRestoreWorkspace(): Promise<Workspace | null> {
   if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
     const saved = await loadHandle();
     if (saved) {
+      let permission: PermissionState;
       try {
-        await saved.queryPermission('read');
+        permission = await saved.queryPermission({ mode: 'read' });
+      } catch {
+        // 句柄已失效，清理后放弃恢复
+        await clearHandle();
+        permission = 'denied';
+      }
+      // 权限为 prompt 时无法在没有用户手势的情况下恢复，
+      // 此时保留句柄，让用户从"最近打开"里手动重开
+      if (permission === 'granted') {
         return {
           name: saved.name,
           handle: saved,
           mode: 'filesystem',
           lastAccessed: Date.now(),
         };
-      } catch {
-        await clearHandle();
       }
+      return null;
     }
   }
 
@@ -744,6 +832,6 @@ export async function requestWorkspacePermission(
 ): Promise<boolean> {
   if (workspace.mode === 'virtual') return true;
   if (!workspace.handle) return false;
-  const result = await workspace.handle.requestPermission('readwrite');
+  const result = await workspace.handle.requestPermission({ mode: 'readwrite' });
   return result === 'granted';
 }

@@ -3,11 +3,16 @@
 
 type FileSystemPermissionMode = 'read' | 'readwrite';
 
+/** 权限查询/申请的参数描述符（浏览器只接受对象形式，不接受裸字符串） */
+interface FileSystemHandlePermissionDescriptor {
+  mode?: FileSystemPermissionMode;
+}
+
 interface FileSystemHandle {
   readonly name: string;
   readonly kind: 'file' | 'directory';
-  queryPermission(mode?: FileSystemPermissionMode): Promise<PermissionState>;
-  requestPermission(mode?: FileSystemPermissionMode): Promise<PermissionState>;
+  queryPermission(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>;
+  requestPermission(descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState>;
 }
 interface FileSystemFileHandle extends FileSystemHandle {
   readonly kind: 'file';

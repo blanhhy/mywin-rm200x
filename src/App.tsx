@@ -16,7 +16,9 @@ function WorkspaceSelector() {
     workspace,
     workspaceLoading,
     workspaceError,
+    recentWorkspaces,
     openWorkspace,
+    openRecentWorkspace,
     closeWorkspace,
     isFileSystemSupported,
   } = useStore();
@@ -32,6 +34,26 @@ function WorkspaceSelector() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // 最近打开的工作区（仅 filesystem 模式有句柄可复用）
+  const recentSection = recentWorkspaces.length > 0 && (
+    <div className="workspace-recent">
+      <div className="workspace-recent-title">最近打开</div>
+      {recentWorkspaces.map((r, i) => (
+        <button
+          key={`${r.name}-${i}`}
+          className={`workspace-recent-item ${workspace?.name === r.name ? 'current' : ''}`}
+          onClick={async () => {
+            setMenuOpen(false);
+            await openRecentWorkspace(r);
+          }}
+          title={`重新打开 ${r.name}`}
+        >
+          <span className="workspace-recent-name">{r.name}</span>
+        </button>
+      ))}
+    </div>
+  );
 
   if (!isFileSystemSupported()) {
     return (
@@ -71,12 +93,12 @@ function WorkspaceSelector() {
             <div className="workspace-loading">加载中...</div>
           ) : workspace ? (
             <>
-              <div className="workspace-info">
-                <span className="workspace-label">工作区</span>
-                <span className="workspace-path">{workspace.name}</span>
-              </div>
-              <div className="workspace-dir-hint">
-                System/ · Faceset/ · Picture/
+              <div className="workspace-menu-top">
+                <div className="workspace-info">
+                  <span className="workspace-label">工作区</span>
+                  <span className="workspace-path">{workspace.name}</span>
+                </div>
+                {recentSection}
               </div>
               <button
                 className="workspace-menu-item"
@@ -99,11 +121,14 @@ function WorkspaceSelector() {
             </>
           ) : (
             <>
-              <div className="workspace-empty">
-                未打开工作区
-              </div>
-              <div className="workspace-dir-hint">
-                打开文件夹后可持久化素材和导出
+              <div className="workspace-menu-top">
+                <div className="workspace-empty">
+                  未打开工作区
+                </div>
+                <div className="workspace-dir-hint">
+                  打开文件夹后可持久化素材和导出
+                </div>
+                {recentSection}
               </div>
               <button
                 className="workspace-menu-item"

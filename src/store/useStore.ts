@@ -25,8 +25,14 @@ import {
   isFileSystemAccessSupported,
   listWorkspacePictures,
   overwritePictureInWorkspace,
+  saveHandle as saveWorkspaceHandle,
+  addRecentWorkspace,
+  listRecentWorkspaces,
+  removeRecentWorkspace,
+  isSameDirectoryHandle,
   type Workspace as WorkspaceInfo,
   type PictureEntry,
+  type RecentWorkspace,
 } from '../engine/workspace';
 
 interface StoreState {
@@ -37,6 +43,7 @@ interface StoreState {
   workspaceLoading: boolean;
   workspaceError: string | null;
   assetRefreshing: boolean;
+  recentWorkspaces: RecentWorkspace[];
   theme: 'dark' | 'light';
 
   // 替换模式（右侧 Picture 图库抽屉）
@@ -57,6 +64,8 @@ interface StoreState {
   openWorkspace: () => Promise<void>;
   restoreWorkspace: () => Promise<void>;
   closeWorkspace: () => Promise<void>;
+  /** 从最近列表重新打开一个工作区（filesystem 模式） */
+  openRecentWorkspace: (entry: RecentWorkspace) => Promise<void>;
   saveAssetToWorkspace: (category: AssetCategory, file: File) => Promise<AssetEntry | null>;
   removeAssetFromWorkspace: (category: AssetCategory, name: string) => Promise<boolean>;
   exportPNGToWorkspace: (filename: string, pngData: Uint8Array) => Promise<string | null>;
@@ -109,6 +118,35 @@ function syncFollowTargetSize(
     });
 }
 
+/** 读取最近打开的工作区列表到 state */
+async function loadRecentsInto(
+  set: (partial: (s: StoreState) => Partial<StoreState>) => void,
+): Promise<void> {
+  const recents = await listRecentWorkspaces();
+  set(() => ({ recentWorkspaces: recents }));
+}
+
+/**
+ * 接管一个工作区：更新 state、读取素材目录，并把该目录记入最近列表
+ * （先设置 workspace，素材读取失败也不至于丢失工作区本身）
+ */
+async function adoptWorkspace(
+  ws: WorkspaceInfo,
+  set: (partial: (s: StoreState) => Partial<StoreState>) => void,
+): Promise<void> {
+  set(() => ({ workspace: ws, selectedPicture: null }));
+  const [sysAssets, faceAssets, pictures] = await Promise.all([
+    listWorkspaceAssets(ws, 'System'),
+    listWorkspaceAssets(ws, 'FaceSet'),
+    listWorkspacePictures(ws),
+  ]);
+  setWorkspaceAssets('System', sysAssets);
+  setWorkspaceAssets('FaceSet', faceAssets);
+  set(() => ({ pictures }));
+  markAssetsRefreshed();
+  if (ws.handle) await addRecentWorkspace(ws.handle);
+}
+
 export const useStore = create<StoreState>((set, get) => ({
   config: {
     ...DEFAULT_CONFIG,
@@ -119,6 +157,7 @@ export const useStore = create<StoreState>((set, get) => ({
   workspaceLoading: false,
   workspaceError: null,
   assetRefreshing: false,
+  recentWorkspaces: [],
   theme: savedTheme ?? 'dark',
   drawerOpen: false,
   pictures: [],
@@ -213,38 +252,55 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ workspaceLoading: true, workspaceError: null });
     try {
       const ws = await openWorkspace();
-      if (ws) {
-        set({ workspace: ws, selectedPicture: null });
-        const sysAssets = await listWorkspaceAssets(ws, 'System');
-        const faceAssets = await listWorkspaceAssets(ws, 'FaceSet');
-        const pictures = await listWorkspacePictures(ws);
-        setWorkspaceAssets('System', sysAssets);
-        setWorkspaceAssets('FaceSet', faceAssets);
-        set({ pictures });
-        markAssetsRefreshed();
-      }
+      if (ws) await adoptWorkspace(ws, set);
     } catch (e) {
       set({ workspaceError: String(e) || '打开工作区失败' });
     } finally {
       set({ workspaceLoading: false });
+      await loadRecentsInto(set);
     }
   },
 
   restoreWorkspace: async () => {
     try {
       const ws = await tryRestoreWorkspace();
-      if (ws) {
-        set({ workspace: ws });
-        const sysAssets = await listWorkspaceAssets(ws, 'System');
-        const faceAssets = await listWorkspaceAssets(ws, 'FaceSet');
-        const pictures = await listWorkspacePictures(ws);
-        setWorkspaceAssets('System', sysAssets);
-        setWorkspaceAssets('FaceSet', faceAssets);
-        set({ pictures });
-        markAssetsRefreshed();
-      }
+      if (ws) await adoptWorkspace(ws, set);
     } catch {
       // 静默失败，不影响应用正常使用
+    }
+    await loadRecentsInto(set);
+  },
+
+  openRecentWorkspace: async (entry) => {
+    if (get().workspaceLoading) return;
+    const handle = entry.handle;
+
+    // 已是当前工作区则无需重开
+    const current = get().workspace?.handle;
+    if (current && (await isSameDirectoryHandle(current, handle))) return;
+
+    set({ workspaceLoading: true, workspaceError: null });
+    try {
+      let permission = await handle.queryPermission({ mode: 'readwrite' });
+      if (permission === 'prompt') {
+        permission = await handle.requestPermission({ mode: 'readwrite' });
+      }
+      if (permission !== 'granted') {
+        set({ workspaceError: '未获得该目录的访问权限' });
+        return;
+      }
+      await saveWorkspaceHandle(handle);
+      await adoptWorkspace(
+        { name: handle.name, handle, mode: 'filesystem', lastAccessed: Date.now() },
+        set,
+      );
+    } catch (e) {
+      // 目录被移动/删除等：从最近列表移除，避免留下无法打开的条目
+      await removeRecentWorkspace(handle);
+      set({ workspaceError: `该目录已不可用，已从最近列表移除（${String(e)}）` });
+    } finally {
+      set({ workspaceLoading: false });
+      await loadRecentsInto(set);
     }
   },
 
