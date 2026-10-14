@@ -1,9 +1,13 @@
-// PNG 导出器：将 canvas 导出为 8 位索引色 PNG（bitDepth=8, colorType=3）
-// 确保兼容 RPG Maker 2000/2003 的 PNG 导入要求
-// 透明色替换：将 alpha=0 的像素替换为指定的透明色（palette[0]）
+// 图片导出器：把 canvas 导出为 RPG Maker 2000/2003 兼容的素材文件
+//
+//   PNG：8 位索引色（bitDepth=8, colorType=3），无 tRNS chunk
+//   BMP：8 位索引色（BITMAPINFOHEADER + 256 色调色板）
+//
+// 两者约定一致：透明色写入调色板 palette[0]，alpha=0 的像素替换为该色。
+// 超过 256 色时用中位切分法量化。
 
 import { parseColor, recommendTransparentColor, rgbToHex } from './colorUtils';
-import { parsePNGPalette0 } from './transparentColorInference';
+import { parsePalette0 } from './transparentColorInference';
 
 export interface ExportOptions {
   /** 透明色（CSS 字符串，如 "#003300"）；alpha=0 的像素会被替换为此色 */
@@ -322,7 +326,96 @@ async function encodeIndexedPNG(
   return png;
 }
 
+// ── BMP 编码（8 位索引色） ────────────────────────────
+function encodeIndexedBMP(
+  indices: Uint8Array,
+  width: number,
+  height: number,
+  palette: Uint8Array,
+): Uint8Array {
+  const PALETTE_ENTRIES = 256; // 固定 256 项，未用到的填 0（部分工具会按 256 读取）
+  const paletteBytes = PALETTE_ENTRIES * 4; // RGBQUAD
+  const offBits = 14 + 40 + paletteBytes;
+  const rowBytes = (width + 3) & ~3; // 每行 4 字节对齐
+  const pixelBytes = rowBytes * height;
+  const file = new Uint8Array(offBits + pixelBytes);
+  const view = new DataView(file.buffer);
+
+  // BITMAPFILEHEADER
+  file[0] = 0x42; // 'B'
+  file[1] = 0x4d; // 'M'
+  view.setUint32(2, file.length, true); // bfSize
+  view.setUint32(10, offBits, true); // bfOffBits
+
+  // BITMAPINFOHEADER
+  view.setUint32(14, 40, true); // biSize
+  view.setInt32(18, width, true); // biWidth
+  view.setInt32(22, height, true); // biHeight（正数 = 自下而上）
+  view.setUint16(26, 1, true); // biPlanes
+  view.setUint16(28, 8, true); // biBitCount
+  view.setUint32(30, 0, true); // biCompression = BI_RGB
+  view.setUint32(34, pixelBytes, true); // biSizeImage
+  view.setUint32(38, 0, true); // biXPelsPerMeter
+  view.setUint32(42, 0, true); // biYPelsPerMeter
+  view.setUint32(46, PALETTE_ENTRIES, true); // biClrUsed
+  view.setUint32(50, PALETTE_ENTRIES, true); // biClrImportant
+
+  // 调色板：RGBQUAD = B, G, R, 0（palette 为 RGB 三元组序列，idx 0 = 透明色）
+  for (let i = 0; i < PALETTE_ENTRIES; i++) {
+    const dst = 54 + i * 4;
+    const src = i * 3;
+    if (src + 2 < palette.length) {
+      file[dst] = palette[src + 2];
+      file[dst + 1] = palette[src + 1];
+      file[dst + 2] = palette[src];
+    }
+    file[dst + 3] = 0;
+  }
+
+  // 像素数据：自下而上逐行拷贝，行尾补齐
+  for (let y = 0; y < height; y++) {
+    const srcRow = (height - 1 - y) * width;
+    const dstRow = offBits + y * rowBytes;
+    file.set(indices.subarray(srcRow, srcRow + width), dstRow);
+  }
+
+  return file;
+}
+
 // ── 公共 API ───────────────────────────────────────────
+
+/**
+ * 把 canvas 转成索引色图像：透明像素替换为透明色后量化到 ≤256 色
+ *
+ * PNG / BMP 共用这一步，保证两种格式的调色板与像素索引完全一致。
+ */
+function buildIndexedImage(
+  canvas: HTMLCanvasElement,
+  options: ExportOptions,
+): { palette: Uint8Array; indices: Uint8Array; width: number; height: number } {
+  const ctx = canvas.getContext('2d')!;
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+
+  const transparentRGB = parseColor(options.transparentColor);
+  if (!transparentRGB) {
+    throw new Error(`无效的透明色: ${options.transparentColor}`);
+  }
+  const [tr, tg, tb] = transparentRGB;
+
+  // 将透明像素替换为透明色（alpha 设为 255）
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) {
+      data[i] = tr;
+      data[i + 1] = tg;
+      data[i + 2] = tb;
+      data[i + 3] = 255;
+    }
+  }
+
+  const { palette, indices } = quantizeToPalette(data, [tr, tg, tb]);
+  return { palette, indices, width: canvas.width, height: canvas.height };
+}
 
 /**
  * 统计 canvas 中的唯一颜色数量（透明像素视为同一颜色）
@@ -351,31 +444,22 @@ export async function canvasTo8bitPNG(
   canvas: HTMLCanvasElement,
   options: ExportOptions,
 ): Promise<Uint8Array> {
-  const ctx = canvas.getContext('2d')!;
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
+  const { palette, indices, width, height } = buildIndexedImage(canvas, options);
+  return encodeIndexedPNG(indices, width, height, palette);
+}
 
-  const transparentRGB = parseColor(options.transparentColor);
-  if (!transparentRGB) {
-    throw new Error(`无效的透明色: ${options.transparentColor}`);
-  }
-  const [tr, tg, tb] = transparentRGB;
-
-  // 将透明像素替换为透明色（alpha 设为 255）
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] === 0) {
-      data[i] = tr;
-      data[i + 1] = tg;
-      data[i + 2] = tb;
-      data[i + 3] = 255;
-    }
-  }
-
-  // 颜色量化
-  const { palette, indices } = quantizeToPalette(data, [tr, tg, tb]);
-
-  // 编码 PNG
-  return encodeIndexedPNG(indices, canvas.width, canvas.height, palette);
+/**
+ * 将 canvas 导出为 8 位索引色 BMP（BITMAPINFOHEADER + 256 色调色板）
+ * - 透明像素（alpha=0）被替换为 transparentColor
+ * - 调色板 palette[0] = 透明色（RPG Maker 2000 素材约定）
+ * - 像素数据自下而上存放，每行按 4 字节对齐
+ */
+export function canvasTo8bitBMP(
+  canvas: HTMLCanvasElement,
+  options: ExportOptions,
+): Uint8Array {
+  const { palette, indices, width, height } = buildIndexedImage(canvas, options);
+  return encodeIndexedBMP(indices, width, height, palette);
 }
 
 /**
@@ -447,7 +531,7 @@ function collectOpaqueColors(canvas: HTMLCanvasElement): Set<number> {
 /**
  * 从对照图片推荐透明色（替换模式）
  *
- * 1. 8 位索引色 PNG：直接读取调色板 index 0（最准确，
+ * 1. 索引色文件（PNG / BMP）：直接读取调色板 index 0（最准确，
  *    兼容 RTP 素材与工具自身的导出产物）
  * 2. 其他格式：统计不透明颜色的面积，从大到小尝试，
  *    优先选择不与当前画面颜色冲突的颜色（避免导出时把画面误判为透明）
@@ -458,10 +542,10 @@ export async function recommendTransparentColorFromPicture(
   dataUrl: string,
   renderCanvas: HTMLCanvasElement,
 ): Promise<string | null> {
-  // 策略 1：解析索引色 PNG 的调色板 index 0
+  // 策略 1：解析索引色文件的调色板 index 0
   const bytes = dataUrlToBytes(dataUrl);
   if (bytes) {
-    const palette0 = parsePNGPalette0(bytes);
+    const palette0 = parsePalette0(bytes);
     if (palette0) return palette0;
   }
 

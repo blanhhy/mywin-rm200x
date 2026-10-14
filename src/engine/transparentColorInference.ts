@@ -3,16 +3,17 @@
 // 当用户导入一张 System 图时，需要指定透明色（即图上哪些颜色应被
 // 视为透明）。本工具提供几种自动推断策略，按优先级尝试：
 //
-//   1. PNG 调色板 index 0（首选）：
-//      RTP 标准 System 素材为 8 位索引色 PNG，约定 palette[0] 就是透明色。
-//      直接解析 PNG 文件的 PLTE chunk 取第一个颜色。
+//   1. 调色板 index 0（首选）：
+//      RTP 标准素材为 8 位索引色 PNG，RPG Maker 2000 素材则多为 8 位
+//      BMP，两者约定相同：palette[0] 就是透明色。PNG 读 PLTE chunk，
+//      BMP 读 DIB 头之后的调色板，调用方无需区分格式。
 //   2. System 图右上角单像素 (w-1, 0)：
 //      标准 System 图右上角是三角箭头图标，角落通常是透明色填充。
 //      注意：之前取 (144,16) 区域中心是错误的，因为该位置可能不是透明的。
 //   3. 四角多数色：取四角中出现次数最多的颜色（典型 BMP 透明色处理）。
 //   4. 最大连通区域：扫描图像，找到占据面积最大的连通同色区域。
 //
-// 推荐使用 inferTransparentColorFromBuffer（异步），它能解析 PNG 调色板。
+// 推荐使用 inferTransparentColorFromBuffer（异步），它能解析文件调色板。
 // 同步版本 inferTransparentColor 仅能使用策略 2-4。
 
 import { rgbToHex } from './colorUtils';
@@ -20,6 +21,24 @@ import { rgbToHex } from './colorUtils';
 export interface InferOptions {
   /** System 图模式：按 160×80 布局取右上角单像素 (w-1, 0) */
   systemLayout?: boolean;
+}
+
+/** 可解析调色板的图片格式 */
+export type ImageFormat = 'png' | 'bmp';
+
+/**
+ * 按文件头识别图片格式（仅覆盖本工具支持解析的 PNG / BMP）
+ */
+export function detectImageFormat(buffer: Uint8Array | ArrayBuffer): ImageFormat | null {
+  const buf = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  if (buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+    return 'png';
+  }
+  // "BM"
+  if (buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d) {
+    return 'bmp';
+  }
+  return null;
 }
 
 /**
@@ -68,7 +87,56 @@ export function parsePNGPalette0(buffer: Uint8Array | ArrayBuffer): string | nul
 }
 
 /**
- * 异步推断透明色（推荐）：优先解析 PNG 调色板 index 0
+ * 从 BMP 文件 buffer 解析调色板 index 0 的颜色
+ *
+ * 适用于 8 位及以下的索引色 BMP（RPG Maker 2000 素材的常见格式）。
+ * 调色板紧跟在 DIB 头之后，条目为 RGBQUAD（B,G,R,保留字节）；
+ * BITMAPCOREHEADER（12 字节头）的条目为 RGBTRIPLE（B,G,R）。
+ *
+ * @returns RGB hex 字符串，非索引色 BMP（如 24 位）返回 null
+ */
+export function parseBMPPalette0(buffer: Uint8Array | ArrayBuffer): string | null {
+  const buf = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  // BITMAPFILEHEADER(14) + 最小的 DIB 头(12)
+  if (buf.length < 26) return null;
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+
+  const dibSize = view.getUint32(14, true);
+  if (dibSize < 12) return null;
+
+  // bcBitCount / biBitCount 分别位于 14+10 / 14+14
+  const bitCountOffset = 14 + (dibSize === 12 ? 10 : 14);
+  if (bitCountOffset + 2 > buf.length) return null;
+  const bitCount = view.getUint16(bitCountOffset, true);
+  // 超过 8 位没有调色板
+  if (bitCount > 8) return null;
+
+  const paletteOffset = 14 + dibSize;
+  const entrySize = dibSize === 12 ? 3 : 4;
+  if (paletteOffset + entrySize > buf.length) return null;
+
+  return rgbToHex(
+    buf[paletteOffset + 2],
+    buf[paletteOffset + 1],
+    buf[paletteOffset],
+  );
+}
+
+/**
+ * 从 PNG / BMP 文件 buffer 解析调色板 index 0（透明色）
+ *
+ * 两种格式走同一条路径，调用方无需判断格式；无法解析时返回 null。
+ */
+export function parsePalette0(buffer: Uint8Array | ArrayBuffer): string | null {
+  const format = detectImageFormat(buffer);
+  if (format === 'png') return parsePNGPalette0(buffer);
+  if (format === 'bmp') return parseBMPPalette0(buffer);
+  return null;
+}
+
+
+/**
+ * 异步推断透明色（推荐）：优先解析文件调色板 index 0（PNG / BMP）
  *
  * @param src 图片 URL
  * @param source 可选，已加载的图片元素（用于策略 2-4 回退）
@@ -79,12 +147,12 @@ export async function inferTransparentColorFromBuffer(
   source?: HTMLImageElement | ImageBitmap | HTMLCanvasElement,
   options: InferOptions = {},
 ): Promise<string | null> {
-  // 策略 1：fetch 原始 bytes，解析 PNG 调色板
+  // 策略 1：fetch 原始 bytes，解析调色板（PNG / BMP 共用）
   try {
     const resp = await fetch(src);
     if (resp.ok) {
       const buffer = new Uint8Array(await resp.arrayBuffer());
-      const palette0 = parsePNGPalette0(buffer);
+      const palette0 = parsePalette0(buffer);
       if (palette0) return palette0;
     }
   } catch {

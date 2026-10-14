@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { loadImage } from '../../engine/messageWindow';
-import { parsePNGPalette0 } from '../../engine/transparentColorInference';
+import { parsePalette0 } from '../../engine/transparentColorInference';
 import { type BackgroundMode, type StretchMode, type SystemImageRef } from '../../types';
 import SystemPicker, { type SystemPickerValue } from '../pickers/SystemPicker';
 
-/** 将 data URL 解码为字节，用于解析 PNG 调色板 */
+/** 将 data URL 解码为字节，用于解析图片格式与调色板 */
 function dataUrlToBytes(dataUrl: string): Uint8Array {
   const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
   const bin = atob(base64);
@@ -56,13 +56,13 @@ export default function BackgroundTab() {
     const url = URL.createObjectURL(file);
     const img = await loadImage(url);
 
-    // 尝试从 PNG 调色板提取 idx-0 作为透明色
+    // 尝试从调色板提取 idx-0 作为透明色（PNG / BMP 同一条路径）
     let palette0: string | null = null;
     try {
       const buffer = await file.arrayBuffer();
-      palette0 = parsePNGPalette0(buffer);
+      palette0 = parsePalette0(buffer);
     } catch {
-      // 非 PNG 或解析失败，不使用透明色
+      // 解析失败，不使用透明色
     }
 
     applyReferenceImage(img, palette0);
@@ -88,10 +88,10 @@ export default function BackgroundTab() {
     if (!pic) return;
 
     const img = await loadImage(pic.dataUrl);
-    // 解析 PNG 调色板 idx-0 作为透明色
+    // 解析调色板 idx-0 作为透明色（PNG / BMP 同一条路径）
     let palette0: string | null = null;
     try {
-      palette0 = parsePNGPalette0(dataUrlToBytes(pic.dataUrl));
+      palette0 = parsePalette0(dataUrlToBytes(pic.dataUrl));
     } catch {
       // 解析失败，不使用透明色
     }

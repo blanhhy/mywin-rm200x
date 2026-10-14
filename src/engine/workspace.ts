@@ -743,15 +743,25 @@ async function exportFromVirtual(
 
 /** Picture 目录中的图片条目 */
 export interface PictureEntry {
-  /** 完整文件名（含扩展名），如 "mywin-123.png" */
+  /** 完整文件名（含扩展名），如 "mywin-123.png" / "System.bmp" */
   fileName: string;
   /** 可直接用于 img.src 的 dataURL */
   dataUrl: string;
 }
 
+/** 按扩展名判断 Picture 条目是否可用作覆盖目标 */
+function isPictureFile(name: string): boolean {
+  return /\.(png|bmp)$/i.test(name);
+}
+
+/** 按扩展名给出 MIME 类型（virtual 模式下 dataURL 需要正确的类型才能解码） */
+function mimeFromFileName(fileName: string): string {
+  return /\.bmp$/i.test(fileName) ? 'image/bmp' : 'image/png';
+}
+
 /**
- * 列出工作区 Picture 目录中的 PNG 图片
- * （导出产物均为 PNG，因此只列出 PNG 以便安全覆盖）
+ * 列出工作区 Picture 目录中的图片
+ * 覆盖时按目标文件的扩展名写入同名格式（PNG / BMP），因此两者都能列为目标
  */
 export async function listWorkspacePictures(
   workspace: Workspace,
@@ -763,7 +773,7 @@ export async function listWorkspacePictures(
         fileName: f.key.slice('Picture/'.length),
         dataUrl: f.dataUrl,
       }))
-      .filter((p) => /\.png$/i.test(p.fileName))
+      .filter((p) => isPictureFile(p.fileName))
       .sort((a, b) => a.fileName.localeCompare(b.fileName));
   }
 
@@ -771,7 +781,7 @@ export async function listWorkspacePictures(
   const dir = await workspace.handle.getDirectoryHandle('Picture', { create: true });
   const results: PictureEntry[] = [];
   for await (const [name, handle] of dir.entries()) {
-    if (handle.kind === 'file' && /\.png$/i.test(name)) {
+    if (handle.kind === 'file' && isPictureFile(name)) {
       try {
         const dataUrl = await fileHandleToDataUrl(handle as FileSystemFileHandle);
         results.push({ fileName: name, dataUrl });
@@ -810,12 +820,12 @@ export async function overwritePictureInWorkspace(
 
 async function overwriteVirtualPicture(
   fileName: string,
-  pngData: Uint8Array,
+  data: Uint8Array,
 ): Promise<string> {
-  const blob = new Blob([pngData.buffer.slice(
-    pngData.byteOffset,
-    pngData.byteOffset + pngData.byteLength,
-  ) as ArrayBuffer], { type: 'image/png' });
+  const blob = new Blob([data.buffer.slice(
+    data.byteOffset,
+    data.byteOffset + data.byteLength,
+  ) as ArrayBuffer], { type: mimeFromFileName(fileName) });
   const dataUrl = await blobToDataUrl(blob);
   const cleanName = fileName.replace(/\.[^.]+$/, '');
   await storeVirtualFile(`Picture/${fileName}`, { name: cleanName, dataUrl });

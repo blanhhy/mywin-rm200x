@@ -24,13 +24,13 @@ export interface AssetEntry {
 }
 
 // === 构建时收集 built-in RTP 素材 ===
-const systemModules = import.meta.glob('../../assets/RTP/System/*.{png,PNG}', {
+const systemModules = import.meta.glob('../../assets/RTP/System/*.{png,PNG,bmp,BMP}', {
   eager: true,
   query: '?url',
   import: 'default',
 }) as Record<string, string>;
 
-const facesetModules = import.meta.glob('../../assets/RTP/FaceSet/*.{png,PNG}', {
+const facesetModules = import.meta.glob('../../assets/RTP/FaceSet/*.{png,PNG,bmp,BMP}', {
   eager: true,
   query: '?url',
   import: 'default',
@@ -134,7 +134,36 @@ function readFileAsDataURL(file: File): Promise<string> {
 export function listAssets(category: AssetCategory): AssetEntry[] {
   const user = category === 'System' ? userSystemAssets : userFaceSetAssets;
   const workspace = category === 'System' ? workspaceSystemAssets : workspaceFaceSetAssets;
-  return [...BUILTIN_SYSTEM_OR_FACESET(category), ...workspace, ...user];
+  return disambiguateNames([...BUILTIN_SYSTEM_OR_FACESET(category), ...workspace, ...user]);
+}
+
+/**
+ * 同名素材消歧
+ *
+ * 素材名不含扩展名，因此不同来源的同名文件会撞名（如内置的
+ * System.png 与工作区的 System.bmp 都叫 "System"）。此时靠后的条目
+ * 补上扩展名，否则列表里会出现两个同名项，且选中任何一个取到的
+ * 都是靠前那个文件。
+ */
+function disambiguateNames(entries: AssetEntry[]): AssetEntry[] {
+  const used = new Set<string>();
+  return entries.map((entry) => {
+    let name = entry.name;
+    if (used.has(name)) {
+      const ext = getExtension(entry);
+      const base = ext ? `${name}.${ext}` : name;
+      name = base;
+      for (let i = 2; used.has(name); i++) name = `${base}_${i}`;
+    }
+    used.add(name);
+    return name === entry.name ? entry : { ...entry, name };
+  });
+}
+
+/** 从 path 中取小写扩展名（user 素材存的是 dataURL，取不到时返回 null） */
+function getExtension(entry: AssetEntry): string | null {
+  const match = (entry.path || '').match(/\.([a-z0-9]+)$/i);
+  return match ? match[1].toLowerCase() : null;
 }
 
 function BUILTIN_SYSTEM_OR_FACESET(category: AssetCategory): AssetEntry[] {

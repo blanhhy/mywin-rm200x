@@ -5,6 +5,7 @@ import { SystemImageRenderer } from '../engine/systemImage';
 import Modal from './Modal';
 import {
   canvasTo8bitPNG,
+  canvasTo8bitBMP,
   canvasToRGBAPNG,
   countUniqueColors,
   downloadPNG,
@@ -116,6 +117,9 @@ export default function Preview() {
     }
   }, [config.colorSystem]);
 
+  // 覆盖目标为 BMP 时，写入 8 位索引色 BMP（而不是 PNG）
+  const targetIsBmp = !!selectedPicture && /\.bmp$/i.test(selectedPicture.fileName);
+
   // 实际执行保存（8 位索引色或 RGBA）
   const doSave = async (mode: 'indexed' | 'rgba', force = false) => {
     const canvas = canvasRef.current;
@@ -131,18 +135,21 @@ export default function Preview() {
     }
 
     try {
-      let pngData: Uint8Array;
-      if (mode === 'rgba') {
-        pngData = await canvasToRGBAPNG(canvas);
+      let fileData: Uint8Array;
+      if (targetIsBmp) {
+        // BMP 无 alpha 通道，只能用调色板 idx-0 表达透明，故固定写入索引色 BMP
+        fileData = canvasTo8bitBMP(canvas, { transparentColor });
+      } else if (mode === 'rgba') {
+        fileData = await canvasToRGBAPNG(canvas);
       } else {
-        pngData = await canvasTo8bitPNG(canvas, { transparentColor });
+        fileData = await canvasTo8bitPNG(canvas, { transparentColor });
       }
       const filename = `mywin-${Date.now()}.png`;
       if (workspace) {
         // 替换模式下覆盖选中的图片，否则另存为新文件
         const savedName = selectedPicture
-          ? await overwritePictureToWorkspace(selectedPicture.fileName, pngData)
-          : await exportPNGToWorkspace(filename, pngData);
+          ? await overwritePictureToWorkspace(selectedPicture.fileName, fileData)
+          : await exportPNGToWorkspace(filename, fileData);
         if (savedName) {
           setExportError(false);
           setExportMsg(
@@ -156,7 +163,7 @@ export default function Preview() {
           setExportMsg(selectedPicture ? '覆盖图片失败' : '导出到工作区失败');
         }
       } else {
-        downloadPNG(pngData, filename);
+        downloadPNG(fileData, filename);
         setExportError(false);
         setExportMsg(mode === 'rgba' ? '已开始下载（真彩色）' : '已开始下载');
       }
@@ -314,15 +321,17 @@ export default function Preview() {
             >
               压缩色彩并保存
             </button>
-            <button
-              className="modal-btn"
-              onClick={() => {
-                setColorOverflow(null);
-                doSave('rgba');
-              }}
-            >
-              扩展色彩并保存
-            </button>
+            {!targetIsBmp && (
+              <button
+                className="modal-btn"
+                onClick={() => {
+                  setColorOverflow(null);
+                  doSave('rgba');
+                }}
+              >
+                扩展色彩并保存
+              </button>
+            )}
             <button
               className="modal-btn primary"
               onClick={() => setColorOverflow(null)}
@@ -344,6 +353,7 @@ export default function Preview() {
             </li>
             <li>
               <strong>扩展色彩</strong>：直接以 RGBA 真彩色导出
+              {targetIsBmp && '（BMP 无 alpha 通道，不支持）'}
             </li>
           </ul>
         </div>
