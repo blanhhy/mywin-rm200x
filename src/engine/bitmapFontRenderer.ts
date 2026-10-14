@@ -123,11 +123,15 @@ const glyphCache = new Map<string, HTMLCanvasElement>();
  * 即文字每个点亮像素 (dx, dy) 取 System 图 (srcX + dx, srcY + dy) 的颜色。
  * 色块本身 16×16，每个像素颜色可能不同（渐变/纹理），不能用单色填充。
  *
+ * solidRGB 非空时（\c[RRGGBB] 显式颜色），不走 System 图取样，
+ * 所有点亮像素统一用该颜色填充。
+ *
  * @param ch 字符
  * @param srcX 色块在 System 图中的取样起点 x
  * @param srcY 色块在 System 图中的取样起点 y
  * @param systemCanvas 处理后的 System 图 canvas（透明色已应用）
  * @param fontId 位图字体 ID
+ * @param solidRGB 显式颜色 0xRRGGBB；提供时忽略 srcX / srcY
  */
 function getBitmapGlyph(
   ch: string,
@@ -136,8 +140,11 @@ function getBitmapGlyph(
   systemCanvas: HTMLCanvasElement,
   fontId: BitmapFontId,
   rendererId: number,
+  solidRGB?: number,
 ): HTMLCanvasElement {
-  const cacheKey = `${ch}|${srcX},${srcY}|${fontId}|${rendererId}`;
+  const cacheKey = solidRGB !== undefined
+    ? `${ch}|solid:${solidRGB}|${fontId}`
+    : `${ch}|${srcX},${srcY}|${fontId}|${rendererId}`;
   const cached = glyphCache.get(cacheKey);
   if (cached) return cached;
 
@@ -147,9 +154,15 @@ function getBitmapGlyph(
   const width = isFull ? RPG_CONSTANTS.FULL_WIDTH : RPG_CONSTANTS.HALF_WIDTH; // 12 or 6
   const height = RPG_CONSTANTS.FONT_HEIGHT; // 12
 
-  // 从 System 图取出对应区域的像素数据（width × 12，起点 (srcX, srcY)）
-  const sysCtx = systemCanvas.getContext('2d', { willReadFrequently: true })!;
-  const sysData = sysCtx.getImageData(srcX, srcY, width, height).data;
+  // 取样模式下从 System 图取出对应区域的像素数据（width × 12，起点 (srcX, srcY)）
+  let sysData: Uint8ClampedArray | null = null;
+  if (solidRGB === undefined) {
+    const sysCtx = systemCanvas.getContext('2d', { willReadFrequently: true })!;
+    sysData = sysCtx.getImageData(srcX, srcY, width, height).data;
+  }
+  const solidR = solidRGB !== undefined ? (solidRGB >> 16) & 0xff : 0;
+  const solidG = solidRGB !== undefined ? (solidRGB >> 8) & 0xff : 0;
+  const solidB = solidRGB !== undefined ? solidRGB & 0xff : 0;
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -167,11 +180,17 @@ function getBitmapGlyph(
       const bit = row & (1 << x);
       const idx = (y * width + x) * 4;
       if (bit) {
-        // 按位置对应取 System 图色块的像素颜色
-        const sIdx = (y * width + x) * 4;
-        pixels[idx] = sysData[sIdx];
-        pixels[idx + 1] = sysData[sIdx + 1];
-        pixels[idx + 2] = sysData[sIdx + 2];
+        if (sysData) {
+          // 按位置对应取 System 图色块的像素颜色
+          const sIdx = (y * width + x) * 4;
+          pixels[idx] = sysData[sIdx];
+          pixels[idx + 1] = sysData[sIdx + 1];
+          pixels[idx + 2] = sysData[sIdx + 2];
+        } else {
+          pixels[idx] = solidR;
+          pixels[idx + 1] = solidG;
+          pixels[idx + 2] = solidB;
+        }
         pixels[idx + 3] = 255;
       }
       // 透明像素 alpha=0（已由 createImageData 初始化）
@@ -292,7 +311,7 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
       }
       const srcPos = getColorSrcPos(seg.color);
       for (const ch of seg.text) {
-        const mainGlyph = getBitmapGlyph(ch, srcPos.x, srcPos.y, systemCanvas, fontId, rendererId);
+        const mainGlyph = getBitmapGlyph(ch, srcPos.x, srcPos.y, systemCanvas, fontId, rendererId, seg.rgb);
         const w = mainGlyph.width; // 字形实际宽度（全角 12px / 半角 6px）
         if (drawShadow) {
           const shadowGlyph = getBitmapGlyph(ch, shadowSrcPos.x, shadowSrcPos.y, systemCanvas, fontId, rendererId);
@@ -309,6 +328,7 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
 //
 // 支持 RPG Maker 2000/2003 全部消息控制字符：
 //   \c[n] / \C[n]  颜色（n=0..19，>19 回到 0，空 [] 等价 \c[0]）
+//   \c[RRGGBB]      mywin 扩展：6 位 16 进制颜色（可带 #），直接用该颜色绘制
 //   \s[n] / \S[n]  文字速度        → 丢弃（静态展示无意义）
 //   \n[n] / \N[n]  角色名          → 保留原始代码
 //   \v[n] / \V[n]  变量值          → 保留原始代码
@@ -330,7 +350,10 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
 interface TextSegment {
   /** 普通文字内容（填充标记为空串） */
   text: string;
+  /** System 配色索引（0-19）；显式颜色时无意义 */
   color: number;
+  /** mywin 扩展：\c[RRGGBB] 指定的显式颜色（0xRRGGBB），否则 undefined */
+  rgb?: number;
   /** \r / \p 填充标记的宽度（6 / 1 像素）；普通文字时为 undefined */
   fillWidth?: number;
   /** \r[n] / \p[n] 的上下扩展量（像素），无参数时为 0 */
@@ -355,6 +378,7 @@ function parseText(text: string, defaultColor: number = 0): ParsedLine[] {
   for (const rawLine of rawLines) {
     const segments: TextSegment[] = [];
     let currentColor = defaultColor;
+    let currentRGB: number | undefined;
     let buf = '';
     let i = 0;
     while (i < rawLine.length) {
@@ -383,14 +407,21 @@ function parseText(text: string, defaultColor: number = 0): ParsedLine[] {
             if (closeIdx !== -1) {
               // \c[n] 需要解析颜色
               if (next === 'c' || next === 'C') {
-                const numStr = rawLine.slice(i + 3, closeIdx);
-                const num = numStr === '' ? 0 : parseInt(numStr, 10);
-                const newColor = Number.isNaN(num) || num > 19 ? 0 : num;
+                const param = rawLine.slice(i + 3, closeIdx).trim();
+                const hex = /^#?([0-9a-fA-F]{6})$/.exec(param);
+                const num = param === '' ? 0 : parseInt(param, 10);
                 if (buf) {
-                  segments.push({ text: buf, color: currentColor });
+                  segments.push({ text: buf, color: currentColor, rgb: currentRGB });
                   buf = '';
                 }
-                currentColor = newColor;
+                if (hex) {
+                  // mywin 扩展：6 位 16 进制颜色，直接用该颜色绘制文字
+                  currentRGB = parseInt(hex[1], 16);
+                  currentColor = 0;
+                } else {
+                  currentRGB = undefined;
+                  currentColor = Number.isNaN(num) || num > 19 ? 0 : num;
+                }
                 i = closeIdx + 1;
                 continue;
               }
@@ -408,10 +439,11 @@ function parseText(text: string, defaultColor: number = 0): ParsedLine[] {
           // 不带 [ 的 \c 退化为颜色 0；其他不带 [ 的控制字符视为普通文本
           if (next === 'c' || next === 'C') {
             if (buf) {
-              segments.push({ text: buf, color: currentColor });
+              segments.push({ text: buf, color: currentColor, rgb: currentRGB });
               buf = '';
             }
             currentColor = 0;
+            currentRGB = undefined;
             i += 2;
             continue;
           }
@@ -438,7 +470,7 @@ function parseText(text: string, defaultColor: number = 0): ParsedLine[] {
         //   带参数 \r[n] / \p[n] 时区域高度上下各扩展 n 像素
         if (next === 'r' || next === 'p') {
           if (buf) {
-            segments.push({ text: buf, color: currentColor });
+            segments.push({ text: buf, color: currentColor, rgb: currentRGB });
             buf = '';
           }
           let expandY = 0;
@@ -470,7 +502,7 @@ function parseText(text: string, defaultColor: number = 0): ParsedLine[] {
       i++;
     }
     if (buf) {
-      segments.push({ text: buf, color: currentColor });
+      segments.push({ text: buf, color: currentColor, rgb: currentRGB });
     }
     lines.push({ segments });
   }
