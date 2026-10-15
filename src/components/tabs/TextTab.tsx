@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { SystemImageRenderer } from '../../engine/systemImage';
 import { type SystemImageRef } from '../../types';
 import SystemPicker, { type SystemPickerValue } from '../pickers/SystemPicker';
+import FontPicker, { type FontPickerValue } from '../pickers/FontPicker';
 
 export default function TextTab() {
   const { config, updateConfig } = useStore();
   const [systemPickerOpen, setSystemPickerOpen] = useState(false);
+  const [fontPickerOpen, setFontPickerOpen] = useState(false);
+
+  const font = config.customFont;
+  const fontSelected = font.family !== null;
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     updateConfig((c) => ({ ...c, text: e.target.value }));
@@ -23,17 +27,38 @@ export default function TextTab() {
     }));
   };
 
-  // 提取配色列表用于展示和选择
-  const colors = (() => {
-    const ref = config.colorSystem;
-    if (!ref.image) return [];
-    try {
-      const r = new SystemImageRenderer(ref.image, ref.transparentColor);
-      return r.getAllColors();
-    } catch {
-      return [];
-    }
-  })();
+  const handleFontApply = (value: FontPickerValue) => {
+    updateConfig((c) => ({
+      ...c,
+      customFont: {
+        ...c.customFont,
+        source: value.source,
+        label: value.label,
+        family: value.family,
+      },
+    }));
+  };
+
+  const handleFontClear = () => {
+    updateConfig((c) => ({
+      ...c,
+      customFont: { ...c.customFont, source: 'local', label: '', family: null },
+    }));
+  };
+
+  const handleFontNumber =
+    (key: 'size' | 'letterSpacing' | 'lineSpacing', min: number, max: number) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const v = Number(e.target.value);
+      if (e.target.value === '' || Number.isNaN(v)) return;
+      updateConfig((c) => ({
+        ...c,
+        customFont: {
+          ...c.customFont,
+          [key]: Math.min(max, Math.max(min, Math.round(v))),
+        },
+      }));
+    };
 
   return (
     <div className="tab-content">
@@ -93,28 +118,81 @@ export default function TextTab() {
         )}
       </div>
 
-      {colors.length > 0 && (
-        <div className="field-group">
-          <label className="field-label">默认文字色</label>
-          <div className="color-grid">
-            {colors.map((c, i) => (
-              <button
-                key={i}
-                type="button"
-                className={`color-swatch ${i === config.defaultColor ? 'selected' : ''}`}
-                style={{ backgroundColor: c }}
-                onClick={() => updateConfig((cfg) => ({ ...cfg, defaultColor: i }))}
-                title={`\\c[${i}] = ${c}`}
-              >
-                {i}
-              </button>
-            ))}
-          </div>
-          <small className="field-hint">
-            当前默认色：\c[{config.defaultColor}]
-          </small>
+      <div className="field-group">
+        <label className="field-label">字体</label>
+        <div className="picker-row">
+          <button
+            type="button"
+            className="upload-btn"
+            onClick={() => setFontPickerOpen(true)}
+            style={{ flex: 1, justifyContent: 'space-between' }}
+          >
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {fontSelected ? font.label : '内置字体'}
+            </span>
+            <span style={{ color: 'var(--color-text-muted)' }}>选择…</span>
+          </button>
+          {fontSelected && (
+            <button type="button" className="upload-btn" onClick={handleFontClear}>清除</button>
+          )}
         </div>
-      )}
+      </div>
+
+      <div className={`field-group ${fontSelected ? '' : 'disabled'}`}>
+        <div className="size-row">
+          <span className="field-label">字号</span>
+          <input
+            type="number"
+            className="number-input"
+            value={font.size}
+            min={1}
+            max={256}
+            disabled={!fontSelected}
+            onChange={handleFontNumber('size', 1, 256)}
+          />
+          <span className="field-label">px</span>
+        </div>
+        <div className="size-row">
+          <span className="field-label">间距</span>
+          <input
+            type="number"
+            className="number-input"
+            value={font.letterSpacing}
+            min={-64}
+            max={64}
+            disabled={!fontSelected}
+            onChange={handleFontNumber('letterSpacing', -64, 64)}
+          />
+          <span className="field-label">px</span>
+        </div>
+        <div className="size-row">
+          <span className="field-label">行距</span>
+          <input
+            type="number"
+            className="number-input"
+            value={font.lineSpacing}
+            min={-64}
+            max={64}
+            disabled={!fontSelected}
+            onChange={handleFontNumber('lineSpacing', -64, 64)}
+          />
+          <span className="field-label">px</span>
+        </div>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={font.shadow}
+            disabled={!fontSelected}
+            onChange={(e) =>
+              updateConfig((c) => ({
+                ...c,
+                customFont: { ...c.customFont, shadow: e.target.checked },
+              }))
+            }
+          />
+          <span>绘制阴影</span>
+        </label>
+      </div>
 
       <SystemPicker
         open={systemPickerOpen}
@@ -123,6 +201,12 @@ export default function TextTab() {
         onClose={() => setSystemPickerOpen(false)}
         onApply={handleSystemApply}
         title="选择配色 System 图"
+      />
+
+      <FontPicker
+        open={fontPickerOpen}
+        onClose={() => setFontPickerOpen(false)}
+        onApply={handleFontApply}
       />
     </div>
   );

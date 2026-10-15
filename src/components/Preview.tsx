@@ -130,7 +130,18 @@ export default function Preview() {
   const { width, height } = useMemo(() => computeWindowSize(config), [config]);
 
   // 移动端额外应用基础缩放，让标准窗口在 1x 下能完整显示
-  const effectiveZoom = isMobile ? zoom * MOBILE_BASE_SCALE : zoom;
+  const requestedScale = isMobile ? zoom * MOBILE_BASE_SCALE : zoom;
+  /**
+   * 显示倍率必须取整到"设备像素"
+   *
+   * 预览是把 1:1 的画布用 CSS 放大显示的。如果源像素到设备像素的倍率不是整数
+   * （例如 Windows 175% 缩放 × 2× = 3.5），相邻源像素会分别占 3 或 4 个设备像素，
+   * 1 像素宽的笔画就会忽宽忽窄，看起来像被缩放糊掉了。
+   * 这里先把倍率换成设备像素再取整，最后换算回 CSS 像素，保证整数倍。
+   */
+  const dpr = typeof window !== 'undefined' && window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
+  const deviceScale = Math.max(1, Math.round(requestedScale * dpr));
+  const effectiveZoom = deviceScale / dpr;
 
   // 配色列表（用于展示）
   const colors = useMemo(() => {
@@ -225,6 +236,7 @@ export default function Preview() {
         </label>
         <span className="size-info">
           尺寸：{width} × {height}
+          {Math.abs(effectiveZoom - requestedScale) > 0.01 && `（实际显示 ${effectiveZoom.toFixed(2)}×）`}
         </span>
       </div>
 
@@ -248,7 +260,7 @@ export default function Preview() {
             {colors.map((c, i) => (
               <div
                 key={i}
-                className={`palette-swatch ${i === config.defaultColor ? 'selected' : ''}`}
+                className="palette-swatch"
                 style={{ backgroundColor: c }}
                 title={`\\c[${i}] = ${c}`}
               />
@@ -320,8 +332,9 @@ export default function Preview() {
                   ? {
                       width: compareDims.w * effectiveZoom,
                       height: compareDims.h * effectiveZoom,
+                      imageRendering: 'pixelated',
                     }
-                  : undefined
+                  : { imageRendering: 'pixelated' }
               }
               onLoad={(e) => {
                 const img = e.currentTarget;

@@ -8,7 +8,7 @@
 //   ttyp0 → Shinonome Gothic → WQY → 替换字符
 //   Shinonome Gothic → Baekmuk → WQY → 替换字符
 
-import { RPG_CONSTANTS } from '../types';
+import { RPG_CONSTANTS, DEFAULT_TEXT_RGB } from '../types';
 import { BITMAP_FONTS, type BitmapFontData } from './bitmap-fonts';
 import { isExFontCode, getExFontGlyphData, EXFONT_BASE } from './exfont';
 
@@ -137,7 +137,7 @@ function getBitmapGlyph(
   ch: string,
   srcX: number,
   srcY: number,
-  systemCanvas: HTMLCanvasElement,
+  systemCanvas: HTMLCanvasElement | null,
   fontId: BitmapFontId,
   rendererId: number,
   solidRGB?: number,
@@ -156,13 +156,14 @@ function getBitmapGlyph(
 
   // 取样模式下从 System 图取出对应区域的像素数据（width × 12，起点 (srcX, srcY)）
   let sysData: Uint8ClampedArray | null = null;
-  if (solidRGB === undefined) {
+  if (solidRGB === undefined && systemCanvas) {
     const sysCtx = systemCanvas.getContext('2d', { willReadFrequently: true })!;
     sysData = sysCtx.getImageData(srcX, srcY, width, height).data;
   }
-  const solidR = solidRGB !== undefined ? (solidRGB >> 16) & 0xff : 0;
-  const solidG = solidRGB !== undefined ? (solidRGB >> 8) & 0xff : 0;
-  const solidB = solidRGB !== undefined ? solidRGB & 0xff : 0;
+  // 兜底：既没有显式颜色，也无法从 System 图取色时，用白色绘制
+  const solidR = solidRGB !== undefined ? (solidRGB >> 16) & 0xff : 0xff;
+  const solidG = solidRGB !== undefined ? (solidRGB >> 8) & 0xff : 0xff;
+  const solidB = solidRGB !== undefined ? solidRGB & 0xff : 0xff;
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -217,13 +218,13 @@ export function measureBitmapTextBounds(
   fontId: BitmapFontId,
   lineHeight: number = RPG_CONSTANTS.LINE_HEIGHT,
 ): { width: number; height: number } {
-  const lines = parseText(text, 0);
+  const lines = parseText(text);
   let maxW = 0;
   for (const line of lines) {
     let w = 0;
     for (const seg of line.segments) {
-      if (seg.fillWidth !== undefined) {
-        w += seg.fillWidth;
+      if (seg.fillKind !== undefined) {
+        w += seg.fillKind === 'half' ? RPG_CONSTANTS.HALF_WIDTH : 1;
         continue;
       }
       for (const ch of seg.text) {
@@ -242,12 +243,14 @@ export function measureBitmapTextBounds(
   };
 }
 
-export interface BitmapTextRenderOptions {
-  ctx: CanvasRenderingContext2D;
-  text: string;
-  x: number;
-  y: number;
-  defaultColor: number;
+/**
+ * 文字取色来源（System 配色）
+ *
+ * 为 null 时表示没有可用的 System 配色，文字一律用白色兜底、阴影用黑色。
+ * 这是"白色是兜底色"规则的落点：即使 \c[n] 指定了配色索引，取不到
+ * System 图也只能回退白色。
+ */
+export interface TextColorSource {
   /** System 图处理后的 canvas（用于按像素位置取色） */
   systemCanvas: HTMLCanvasElement;
   /** SystemImageRenderer 的唯一 ID（用于缓存键） */
@@ -256,6 +259,19 @@ export interface BitmapTextRenderOptions {
   getColorSrcPos: (index: number) => { x: number; y: number };
   /** 阴影色块在 System 图中的取样起点 */
   shadowSrcPos: { x: number; y: number };
+  /** 第 N 个配色的单色值（0xRRGGBB），自定义字体在 12px 时使用 */
+  getColorRGB: (index: number) => number;
+  /** 阴影色单色值（0xRRGGBB） */
+  shadowRGB: number;
+}
+
+export interface BitmapTextRenderOptions {
+  ctx: CanvasRenderingContext2D;
+  text: string;
+  x: number;
+  y: number;
+  /** 文字取色来源；null 时文字白色兜底、阴影黑色 */
+  colorSource: TextColorSource | null;
   drawShadow?: boolean;
   lineHeight?: number;
   fontId: BitmapFontId;
@@ -270,6 +286,7 @@ export interface BitmapTextRenderOptions {
  *
  * 着色逻辑与 EasyRPG Font::RenderImpl 一致：
  * 字形作为 alpha mask，颜色按位置对应取自 System 图的 16×16 色块
+ * 没有 System 配色时一律白色兜底（\c[RRGGBB] 扩展语法仍然生效）
  */
 export function renderBitmapText(opts: BitmapTextRenderOptions): void {
   const {
@@ -277,19 +294,14 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
     text,
     x,
     y,
-    defaultColor,
-    systemCanvas,
-    rendererId,
-    getColorSrcPos,
-    shadowSrcPos,
+    colorSource,
     drawShadow = true,
     lineHeight = RPG_CONSTANTS.LINE_HEIGHT,
     fontId,
     onFillRegion,
   } = opts;
 
-  // 解析颜色控制符（复用 textRenderer 的解析逻辑）
-  const lines = parseText(text, defaultColor);
+  const lines = parseText(text);
   ctx.imageSmoothingEnabled = false;
 
   for (let li = 0; li < lines.length; li++) {
@@ -298,23 +310,42 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
     let curX = x;
     for (const seg of line.segments) {
       // 填充分隔：不画字形，只占位并记录区域，由调用方填充参考图像素
-      if (seg.fillWidth !== undefined) {
+      if (seg.fillKind !== undefined) {
+        const w = seg.fillKind === 'half' ? RPG_CONSTANTS.HALF_WIDTH : 1;
         const expandY = seg.fillExpandY ?? 0;
         onFillRegion?.({
           x: curX,
           y: lineY - expandY,
-          w: seg.fillWidth,
+          w,
           h: RPG_CONSTANTS.FONT_HEIGHT + expandY * 2,
         });
-        curX += seg.fillWidth;
+        curX += w;
         continue;
       }
-      const srcPos = getColorSrcPos(seg.color);
+      // \c[RRGGBB] 显式颜色优先；没有 System 配色时用白色兜底
+      const mainSolid = colorSource ? seg.rgb : seg.rgb ?? DEFAULT_TEXT_RGB;
+      const srcPos = colorSource ? colorSource.getColorSrcPos(seg.color) : null;
       for (const ch of seg.text) {
-        const mainGlyph = getBitmapGlyph(ch, srcPos.x, srcPos.y, systemCanvas, fontId, rendererId, seg.rgb);
+        const mainGlyph = getBitmapGlyph(
+          ch,
+          srcPos?.x ?? 0,
+          srcPos?.y ?? 0,
+          colorSource?.systemCanvas ?? null,
+          fontId,
+          colorSource?.rendererId ?? 0,
+          mainSolid,
+        );
         const w = mainGlyph.width; // 字形实际宽度（全角 12px / 半角 6px）
         if (drawShadow) {
-          const shadowGlyph = getBitmapGlyph(ch, shadowSrcPos.x, shadowSrcPos.y, systemCanvas, fontId, rendererId);
+          const shadowGlyph = getBitmapGlyph(
+            ch,
+            colorSource?.shadowSrcPos.x ?? 0,
+            colorSource?.shadowSrcPos.y ?? 0,
+            colorSource?.systemCanvas ?? null,
+            fontId,
+            colorSource?.rendererId ?? 0,
+            colorSource ? undefined : 0x000000,
+          );
           ctx.drawImage(shadowGlyph, curX + 1, lineY + 1);
         }
         ctx.drawImage(mainGlyph, curX, lineY);
@@ -328,6 +359,7 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
 //
 // 支持 RPG Maker 2000/2003 全部消息控制字符：
 //   \c[n] / \C[n]  颜色（n=0..19，>19 回到 0，空 [] 等价 \c[0]）
+//                   取不到 System 配色（或字号非 12px）时回退白色
 //   \c[RRGGBB]      mywin 扩展：6 位 16 进制颜色（可带 #），直接用该颜色绘制
 //   \s[n] / \S[n]  文字速度        → 丢弃（静态展示无意义）
 //   \n[n] / \N[n]  角色名          → 保留原始代码
@@ -341,7 +373,7 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
 //   \_             半角空格        → ' '
 //   \>             加速显示        → 丢弃
 //   \<             减速显示        → 丢弃
-//   \r             mywin 专用填充分隔：占半角宽度（6px），
+//   \r             mywin 专用填充分隔：占半角宽度（位图字体 6px，自定义字体为半字号），
 //   \r[n]          带参数时区域高度上下各扩展 n 像素
 //   \p / \p[n]     mywin 专用填充分隔：占 1px 宽、字符高度，带参数同上
 //                  覆盖写模式下由调用方从参考图取该位置的像素
@@ -354,8 +386,8 @@ interface TextSegment {
   color: number;
   /** mywin 扩展：\c[RRGGBB] 指定的显式颜色（0xRRGGBB），否则 undefined */
   rgb?: number;
-  /** \r / \p 填充标记的宽度（6 / 1 像素）；普通文字时为 undefined */
-  fillWidth?: number;
+  /** \r / \p 填充标记的种类（'half' = 半角字符宽，'pixel' = 1px 宽）；普通文字时为 undefined */
+  fillKind?: 'half' | 'pixel';
   /** \r[n] / \p[n] 的上下扩展量（像素），无参数时为 0 */
   fillExpandY?: number;
 }
@@ -372,12 +404,13 @@ export interface FillRegion {
   h: number;
 }
 
-function parseText(text: string, defaultColor: number = 0): ParsedLine[] {
+export function parseText(text: string): ParsedLine[] {
   const lines: ParsedLine[] = [];
   const rawLines = text.split('\n');
   for (const rawLine of rawLines) {
     const segments: TextSegment[] = [];
-    let currentColor = defaultColor;
+    // 未指定配色时用索引 0；取不到 System 配色时渲染层回退白色
+    let currentColor = 0;
     let currentRGB: number | undefined;
     let buf = '';
     let i = 0;
@@ -486,7 +519,7 @@ function parseText(text: string, defaultColor: number = 0): ParsedLine[] {
           segments.push({
             text: '',
             color: currentColor,
-            fillWidth: next === 'r' ? RPG_CONSTANTS.HALF_WIDTH : 1,
+            fillKind: next === 'r' ? 'half' : 'pixel',
             fillExpandY: expandY,
           });
           i = nextIndex;

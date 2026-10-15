@@ -17,7 +17,10 @@ export class SystemImageRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private colors: string[] = [];
+  /** 与 colors 对应的 0xRRGGBB 值 */
+  private colorsRGB: number[] = [];
   private shadowColor = '#000000';
+  private shadowRGB = 0x000000;
   private transparentRGB: [number, number, number] | null;
   /** 缓存的边框 tile 画布 */
   private tileCache: Map<string, HTMLCanvasElement> = new Map();
@@ -46,17 +49,20 @@ export class SystemImageRenderer {
 
     // 提取 20 个配色块（每块 16x16，从 y=48 起 10x2 排列）
     this.colors = [];
+    this.colorsRGB = [];
     for (let n = 0; n < 20; n++) {
       const cx = (n % 10) * 16 + 8; // 块中心
       const cy = 48 + Math.floor(n / 10) * 16 + 8;
       const px = this.ctx.getImageData(cx, cy, 1, 1).data;
       this.colors.push(`rgb(${px[0]}, ${px[1]}, ${px[2]})`);
+      this.colorsRGB.push((px[0] << 16) | (px[1] << 8) | px[2]);
     }
     // 阴影色块位于 (16, 32)
     const sx = 16 + 8;
     const sy = 32 + 8;
     const sp = this.ctx.getImageData(sx, sy, 1, 1).data;
     this.shadowColor = `rgb(${sp[0]}, ${sp[1]}, ${sp[2]})`;
+    this.shadowRGB = (sp[0] << 16) | (sp[1] << 8) | sp[2];
   }
 
   /** 获取第 N 个颜色（0-19）的 CSS 字符串；越界返回 color 0 */
@@ -65,9 +71,20 @@ export class SystemImageRenderer {
     return this.colors[index];
   }
 
+  /** 获取第 N 个颜色（0-19）的 0xRRGGBB 值；越界返回 color 0 */
+  getColorRGB(index: number): number {
+    if (index < 0 || index >= 20) return this.colorsRGB[0] ?? 0x000000;
+    return this.colorsRGB[index];
+  }
+
   /** 获取文字阴影色 */
   getShadowColor(): string {
     return this.shadowColor;
+  }
+
+  /** 获取文字阴影色的 0xRRGGBB 值 */
+  getShadowRGB(): number {
+    return this.shadowRGB;
   }
 
   /** 获取所有 20 色（用于 UI 展示） */

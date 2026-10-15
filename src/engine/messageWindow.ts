@@ -7,7 +7,8 @@ import {
   type LoadedImage,
 } from '../types';
 import { SystemImageRenderer, InferredImageRenderer, type WindowRenderer } from './systemImage';
-import { renderBitmapText, measureBitmapTextBounds, type BitmapFontId, type FillRegion } from './bitmapFontRenderer';
+import { renderBitmapText, measureBitmapTextBounds, type BitmapFontId, type FillRegion, type TextColorSource } from './bitmapFontRenderer';
+import { renderCustomFontText, measureCustomFontTextBounds } from './customFontRenderer';
 
 export type { FillRegion };
 
@@ -31,7 +32,9 @@ export function computeWindowSize(config: MessageWindowConfig): { width: number;
     };
   }
   // 自适应或数值
-  const textBounds = measureBitmapTextBounds(config.text, inferDefaultFontId());
+  const textBounds = config.customFont.family
+    ? measureCustomFontTextBounds(config.text, config.customFont)
+    : measureBitmapTextBounds(config.text, inferDefaultFontId());
   const hasFaceSpace = config.faceMode === 'face';
   const faceWidth = hasFaceSpace
     ? config.facePosition === 'left'
@@ -213,22 +216,41 @@ export function renderMessageWindow(config: MessageWindowConfig): RenderResult {
   // 5. 绘制文字
   const fillRegions: FillRegion[] = [];
   const colorRenderer = createColorRenderer(config);
-  if (colorRenderer) {
-    const textX = contentX + getTextStartX(config);
-    const textY = contentY;
+  // 没有 System 配色时传 null：文字用白色兜底、阴影用黑色
+  const colorSource: TextColorSource | null = colorRenderer
+    ? {
+        systemCanvas: colorRenderer.getProcessedCanvas(),
+        rendererId: colorRenderer.id,
+        getColorSrcPos: (idx) => colorRenderer.getColorSrcPosition(idx),
+        shadowSrcPos: colorRenderer.getShadowSrcPosition(),
+        getColorRGB: (idx) => colorRenderer.getColorRGB(idx),
+        shadowRGB: colorRenderer.getShadowRGB(),
+      }
+    : null;
 
-    // 始终使用位图字体（与 RPG Maker 200x 完全一致的像素渲染）
+  const textX = contentX + getTextStartX(config);
+  const textY = contentY;
+
+  if (config.customFont.family) {
+    // 自定义字体：字号/间距/阴影可调，12px 才用 System 色盘
+    renderCustomFontText({
+      ctx,
+      text: config.text,
+      x: textX,
+      y: textY,
+      font: config.customFont,
+      colorSource,
+      onFillRegion: (region) => fillRegions.push(region),
+    });
+  } else {
+    // 内置位图字体：与 RPG Maker 200x 完全一致的像素渲染
     // 着色与 EasyRPG 一致：按像素位置从 System 图色块取色（非单色填充）
     renderBitmapText({
       ctx,
       text: config.text,
       x: textX,
       y: textY,
-      defaultColor: config.defaultColor,
-      systemCanvas: colorRenderer.getProcessedCanvas(),
-      rendererId: colorRenderer.id,
-      getColorSrcPos: (idx) => colorRenderer.getColorSrcPosition(idx),
-      shadowSrcPos: colorRenderer.getShadowSrcPosition(),
+      colorSource,
       fontId: inferDefaultFontId(),
       onFillRegion: (region) => fillRegions.push(region),
     });

@@ -43,6 +43,9 @@ export const RPG_CONSTANTS = {
   },
 } as const;
 
+/** 文字兜底色：白色（没有 System 配色、或字号非 12px 时使用） */
+export const DEFAULT_TEXT_RGB = 0xffffff;
+
 /** 脸图状态 */
 export type FaceMode = 'none' | 'face';
 /** 'none' = 禁用（不占空间）, 'face' = 选择脸图（占空间，未选择时位置留空） */
@@ -81,11 +84,36 @@ export interface FaceSetRef {
   image: LoadedImage | null;
 }
 
+/**
+ * 自定义字体设置
+ *
+ * family 为 null 时表示未使用自定义字体，改用内置 12px 位图字体。
+ * 只有 12px 支持 System 色盘（\c[n]），其他字号一律用白色兜底，
+ * 想换色只能用 \c[RRGGBB] 扩展语法。
+ */
+export interface CustomFontConfig {
+  /** 字体来源：本机已安装字体 / 导入的字体文件 */
+  source: 'local' | 'file';
+  /** 展示名（本机字体为族名，文件字体为文件名） */
+  label: string;
+  /** CSS font-family 名；null 表示未使用自定义字体 */
+  family: string | null;
+  /** 字号（像素） */
+  size: number;
+  /** 字间距（像素，可为负） */
+  letterSpacing: number;
+  /** 行间距（像素，行高 = 字号 + 行间距） */
+  lineSpacing: number;
+  /** 是否绘制阴影 */
+  shadow: boolean;
+}
+
 /** 完整的窗口配置 */
 export interface MessageWindowConfig {
   // === 文字设置 ===
   text: string;
-  defaultColor: number; // 默认文字色 0-19
+  /** 自定义字体设置（family 为 null 时使用内置位图字体） */
+  customFont: CustomFontConfig;
 
   // === 窗口设置 ===
   standardWindow: boolean; // true 时锁定为 RPG Runtime 标准尺寸/内边距
@@ -124,7 +152,15 @@ export interface MessageWindowConfig {
 /** 默认配置 */
 export const DEFAULT_CONFIG: MessageWindowConfig = {
   text: '你好，世界！\nHello World!',
-  defaultColor: 0,
+  customFont: {
+    source: 'local',
+    label: '',
+    family: null,
+    size: RPG_CONSTANTS.FONT_HEIGHT,
+    letterSpacing: 0,
+    lineSpacing: 4,
+    shadow: true,
+  },
 
   standardWindow: true,
   followTargetPicture: false,
