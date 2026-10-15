@@ -6,7 +6,7 @@ import {
   type MessageWindowConfig,
   type LoadedImage,
 } from '../types';
-import { SystemImageRenderer, InferredImageRenderer, type WindowRenderer } from './systemImage';
+import { SystemImageRenderer, InferredImageRenderer, getSystemImageRenderer, type WindowRenderer } from './systemImage';
 import { renderBitmapText, measureBitmapTextBounds, type BitmapFontId, type FillRegion } from './bitmapFontRenderer';
 
 export type { FillRegion };
@@ -71,7 +71,8 @@ function createBackgroundRenderer(config: MessageWindowConfig): WindowRenderer |
   if (config.backgroundMode === 'system') {
     const ref = config.backgroundSystem;
     if (!ref.image) return null;
-    return new SystemImageRenderer(ref.image, ref.transparentColor);
+    // 复用共享实例：rendererId 稳定，字形缓存才能命中
+    return getSystemImageRenderer(ref.image, ref.transparentColor);
   }
   if (config.backgroundMode === 'image' && config.backgroundImage) {
     const tileRect = config.backgroundImageTileRect ?? { x: 0, y: 0, w: 32, h: 32 };
@@ -95,7 +96,7 @@ function createBackgroundRenderer(config: MessageWindowConfig): WindowRenderer |
 function createColorRenderer(config: MessageWindowConfig): SystemImageRenderer | null {
   const ref = config.colorSystem;
   if (!ref.image) return null;
-  return new SystemImageRenderer(ref.image, ref.transparentColor);
+  return getSystemImageRenderer(ref.image, ref.transparentColor);
 }
 
 /**

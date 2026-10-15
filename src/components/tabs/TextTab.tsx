@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { SystemImageRenderer } from '../../engine/systemImage';
+import { getSystemImageRenderer } from '../../engine/systemImage';
 import { type SystemImageRef } from '../../types';
 import SystemPicker, { type SystemPickerValue } from '../pickers/SystemPicker';
 
@@ -28,7 +28,7 @@ export default function TextTab() {
     const ref = config.colorSystem;
     if (!ref.image) return [];
     try {
-      const r = new SystemImageRenderer(ref.image, ref.transparentColor);
+      const r = getSystemImageRenderer(ref.image, ref.transparentColor);
       return r.getAllColors();
     } catch {
       return [];

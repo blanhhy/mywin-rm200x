@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { renderMessageWindow, computeWindowSize, loadImage } from '../engine/messageWindow';
-import { SystemImageRenderer } from '../engine/systemImage';
+import { getSystemImageRenderer } from '../engine/systemImage';
 import Modal from './Modal';
 import {
   canvasTo8bitPNG,
@@ -137,7 +137,7 @@ export default function Preview() {
     const ref = config.colorSystem;
     if (!ref.image) return [];
     try {
-      const r = new SystemImageRenderer(ref.image, ref.transparentColor);
+      const r = getSystemImageRenderer(ref.image, ref.transparentColor);
       return r.getAllColors();
     } catch {
       return [];
