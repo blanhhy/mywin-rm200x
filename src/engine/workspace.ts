@@ -350,7 +350,7 @@ function downloadBlob(blob: Blob, filename: string): void {
 // === 公开 API ===
 
 /** 是否为移动端浏览器（移动端的选择器无法选文件夹） */
-function isMobileBrowser(): boolean {
+export function isMobileBrowser(): boolean {
   if (typeof navigator === 'undefined') return false;
   const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } })
     .userAgentData;

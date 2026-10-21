@@ -1,12 +1,17 @@
 // 替换模式抽屉：展示工作区 Picture 目录中的图片
 // 单击选中（再次单击取消），选中后保存时将覆盖该图片
 //
-// Picture 目录可能有上万张图：
-//   1. 缩略图只在滚动到可见区域时才从磁盘读取（共享一个 IntersectionObserver）
-//   2. 列表分批渲染（滚动接近底部时追加），避免一次挂载上万个节点
+// Picture 目录可能有上万张图，桌面端与移动端策略不同：
+//   桌面（读取快）：一次渲染全部条目，缩略图在后台异步逐个读取（并发 8）
+//   移动（SAF 单次读取几百毫秒）：列表分批渲染，缩略图滚到可见区域才读取
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { readPictureDataUrl, type PictureEntry, type Workspace } from '../engine/workspace';
+import {
+  isMobileBrowser,
+  readPictureDataUrl,
+  type PictureEntry,
+  type Workspace,
+} from '../engine/workspace';
 
 // 抽屉开合时会卸载重建，用模块级变量保留滚动位置
 // 以工作区实例为键：关闭工作区后再次打开会重置
@@ -15,8 +20,11 @@ let savedScroll: { workspace: unknown; scrollTop: number } = {
   scrollTop: 0,
 };
 
-/** 每批渲染的图片数量 */
+/** 移动端每批渲染的图片数量 */
 const PICTURE_PAGE_SIZE = 300;
+
+/** 是否为移动端（UA 运行期间不会变化） */
+const IS_MOBILE = isMobileBrowser();
 
 // 共享的可见性观察器：避免为每张图片单独创建 observer
 const visibilityCallbacks = new Map<Element, () => void>();
@@ -47,36 +55,71 @@ function unobserveVisible(el: Element): void {
   sharedObserver?.unobserve(el);
 }
 
-/** 缩略图：滚动到可见区域后才读取文件 */
+// 桌面端一次性排队读取全部缩略图，限制并发，避免同时发起上万个文件读取
+const MAX_CONCURRENT_READS = 8;
+const readWaiters: (() => void)[] = [];
+let activeReads = 0;
+
+function scheduleRead<T>(task: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const run = () => {
+      activeReads += 1;
+      task()
+        .then(resolve, reject)
+        .finally(() => {
+          activeReads -= 1;
+          readWaiters.shift()?.();
+        });
+    };
+    if (activeReads < MAX_CONCURRENT_READS) run();
+    else readWaiters.push(run);
+  });
+}
+
+/**
+ * 缩略图
+ * eager：挂载后立即读取（桌面端后台加载全部）
+ * 否则等滚动到可见区域再读取（移动端）
+ */
 function PictureThumb({
   entry,
   workspace,
+  eager,
 }: {
   entry: PictureEntry;
   workspace: Workspace;
+  eager: boolean;
 }) {
   const [src, setSrc] = useState<string | null>(entry.dataUrl ?? null);
   const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
     if (src) return;
-    const el = imgRef.current;
-    if (!el) return;
     let cancelled = false;
-    observeVisible(el, () => {
-      readPictureDataUrl(workspace, entry)
+    const load = () => {
+      scheduleRead(() => readPictureDataUrl(workspace, entry))
         .then((url) => {
           if (!cancelled) setSrc(url);
         })
         .catch(() => {
           // 读取失败保持占位
         });
-    });
+    };
+
+    const el = imgRef.current;
+    if (eager || !el) {
+      load();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    observeVisible(el, load);
     return () => {
       cancelled = true;
       unobserveVisible(el);
     };
-  }, [src, entry, workspace]);
+  }, [src, entry, workspace, eager]);
 
   return (
     <img
@@ -96,7 +139,10 @@ export default function PictureDrawer() {
   const refreshPictures = useStore((s) => s.refreshPictures);
   const workspace = useStore((s) => s.workspace);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const [visibleCount, setVisibleCount] = useState(PICTURE_PAGE_SIZE);
+  // 桌面端不截断：visibleCount 足够大即可一次渲染全部
+  const [visibleCount, setVisibleCount] = useState(
+    IS_MOBILE ? PICTURE_PAGE_SIZE : Number.MAX_SAFE_INTEGER,
+  );
 
   // 绘制前恢复上次的滚动位置，避免闪烁
   useLayoutEffect(() => {
@@ -108,16 +154,17 @@ export default function PictureDrawer() {
     body.scrollTop = savedScroll.scrollTop;
   }, [workspace]);
 
-  // 列表刷新后从头分批展示
+  // 列表刷新后从头分批展示（移动端）
   useEffect(() => {
-    setVisibleCount(PICTURE_PAGE_SIZE);
+    if (IS_MOBILE) setVisibleCount(PICTURE_PAGE_SIZE);
   }, [pictures]);
 
   const handleScroll = () => {
     const body = bodyRef.current;
     if (body) savedScroll = { workspace, scrollTop: body.scrollTop };
-    // 接近底部时追加下一批
+    // 接近底部时追加下一批（移动端）
     if (
+      IS_MOBILE &&
       body &&
       visibleCount < pictures.length &&
       body.scrollTop + body.clientHeight >= body.scrollHeight - 400
@@ -169,7 +216,7 @@ export default function PictureDrawer() {
                   }}
                 >
                   {workspace ? (
-                    <PictureThumb entry={p} workspace={workspace} />
+                    <PictureThumb entry={p} workspace={workspace} eager={!IS_MOBILE} />
                   ) : (
                     <img
                       className="picture-thumb"
