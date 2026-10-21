@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Modal from '../Modal';
-import { importUserFont, removeUserFont } from '../../engine/fontLoader';
+import { ensureFontLoaded, importUserFont, removeUserFont } from '../../engine/fontLoader';
 import { useStore } from '../../store/useStore';
 import type { CustomFontEntry } from '../../types';
 
@@ -89,8 +89,24 @@ export default function FontPicker({ open, onClose, onApply }: FontPickerProps) 
     if (selected?.family === f.family) setSelected(null);
   };
 
-  const handleApply = () => {
+  /** 选中字体：导入的字体此时才从 IndexedDB 读出并注册，本机字体无需注册 */
+  const selectFont = (f: FontPickerValue) => {
+    setSelected(f);
+    if (f.source === 'file') {
+      void ensureFontLoaded(f.family).catch((e) => setError(`字体加载失败：${e}`));
+    }
+  };
+
+  const handleApply = async () => {
     if (!selected) return;
+    if (selected.source === 'file') {
+      try {
+        await ensureFontLoaded(selected.family);
+      } catch (e) {
+        setError(`字体加载失败：${e}`);
+        return;
+      }
+    }
     onApply(selected);
     onClose();
   };
@@ -126,7 +142,7 @@ export default function FontPicker({ open, onClose, onApply }: FontPickerProps) 
               className={`asset-item ${
                 selected?.family === f.family && selected?.source === f.source ? 'selected' : ''
               }`}
-              onClick={() => setSelected(f)}
+              onClick={() => selectFont(f)}
               title={f.label}
             >
               <span className="asset-name">{f.label}</span>
