@@ -114,6 +114,16 @@ export interface CustomFontConfig {
   pixelPerfect: boolean;
 }
 
+/** 已添加到字体选择器列表的字体条目 */
+export interface CustomFontEntry {
+  /** 字体来源：本机已安装字体 / 导入的字体文件 */
+  source: 'local' | 'file';
+  /** 展示名（本机字体为族名，文件字体为文件名） */
+  label: string;
+  /** CSS font-family 名 */
+  family: string;
+}
+
 /** 完整的窗口配置 */
 export interface MessageWindowConfig {
   // === 文字设置 ===

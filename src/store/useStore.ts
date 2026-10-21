@@ -6,6 +6,7 @@ import {
   RPG_CONSTANTS,
   type MessageWindowConfig,
   type Padding,
+  type CustomFontEntry,
 } from '../types';
 import {
   setWorkspaceAssets,
@@ -45,6 +46,8 @@ interface StoreState {
   assetRefreshing: boolean;
   recentWorkspaces: RecentWorkspace[];
   theme: 'dark' | 'light';
+  /** 已添加到字体选择器的字体（本机字体 + 导入的字体文件） */
+  customFonts: CustomFontEntry[];
 
   // 替换模式（右侧 Picture 图库抽屉）
   drawerOpen: boolean;
@@ -59,6 +62,10 @@ interface StoreState {
   setFollowTargetPicture: (v: boolean) => void;
   setInitialized: (v: boolean) => void;
   toggleTheme: () => void;
+  /** 把字体加入已添加列表（同来源同 family 去重） */
+  addCustomFonts: (items: CustomFontEntry[]) => void;
+  /** 从已添加列表移除一项 */
+  removeCustomFont: (family: string) => void;
 
   // 工作区操作
   openWorkspace: () => Promise<void>;
@@ -159,6 +166,8 @@ export const useStore = create<StoreState>((set, get) => ({
   assetRefreshing: false,
   recentWorkspaces: [],
   theme: savedTheme ?? 'dark',
+  // 导入的字体文件由 main.tsx 从 IndexedDB 恢复后加入
+  customFonts: [],
   drawerOpen: false,
   pictures: [],
   selectedPicture: null,
@@ -211,6 +220,21 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setInitialized: (v) => set({ initialized: v }),
+
+  addCustomFonts: (items) =>
+    set((state) => {
+      const incoming = items.filter(
+        (it) =>
+          !state.customFonts.some((p) => p.source === it.source && p.family === it.family),
+      );
+      if (incoming.length === 0) return {};
+      return { customFonts: [...incoming, ...state.customFonts] };
+    }),
+
+  removeCustomFont: (family) =>
+    set((state) => ({
+      customFonts: state.customFonts.filter((f) => f.family !== family),
+    })),
 
   toggleTheme: () => {
     const next = get().theme === 'dark' ? 'light' : 'dark';

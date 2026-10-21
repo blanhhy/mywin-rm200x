@@ -9,7 +9,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Modal from '../Modal';
-import { registerFontFile } from '../../engine/fontLoader';
+import { importUserFont, removeUserFont } from '../../engine/fontLoader';
+import { useStore } from '../../store/useStore';
+import type { CustomFontEntry } from '../../types';
 
 interface LocalFontData {
   family: string;
@@ -24,11 +26,7 @@ declare global {
 }
 
 /** 选择结果：family 是可直接写进 CSS font-family 的名字 */
-export interface FontPickerValue {
-  source: 'local' | 'file';
-  label: string;
-  family: string;
-}
+export type FontPickerValue = CustomFontEntry;
 
 export interface FontPickerProps {
   open: boolean;
@@ -37,8 +35,10 @@ export interface FontPickerProps {
 }
 
 export default function FontPicker({ open, onClose, onApply }: FontPickerProps) {
-  /** 已添加的字体（本机字体 + 导入的字体文件） */
-  const [fonts, setFonts] = useState<FontPickerValue[]>([]);
+  /** 已添加的字体保存在全局 store，切换标签页/重开弹窗都不会丢失 */
+  const fonts = useStore((s) => s.customFonts);
+  const addCustomFonts = useStore((s) => s.addCustomFonts);
+  const removeCustomFont = useStore((s) => s.removeCustomFont);
   const [selected, setSelected] = useState<FontPickerValue | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [localOpen, setLocalOpen] = useState(false);
@@ -63,25 +63,30 @@ export default function FontPicker({ open, onClose, onApply }: FontPickerProps) 
     typeof window !== 'undefined' && typeof window.queryLocalFonts === 'function';
 
   const handleAddLocal = (items: FontPickerValue[]) => {
-    setFonts((prev) => {
-      const incoming = items.filter(
-        (it) => !prev.some((p) => p.source === 'local' && p.family === it.family),
-      );
-      return [...incoming, ...prev];
-    });
+    addCustomFonts(items);
     if (items.length > 0) setSelected(items[0]);
   };
 
   const handleImportFile = async (file: File) => {
     setError(null);
     try {
-      const family = await registerFontFile(file);
-      const item: FontPickerValue = { source: 'file', label: file.name, family };
-      setFonts((prev) => [item, ...prev]);
+      const item = await importUserFont(file);
+      addCustomFonts([item]);
       setSelected(item);
     } catch (e) {
       setError(`字体文件加载失败：${e}`);
     }
+  };
+
+  /**
+   * 从字体列表移除一项
+   * 导入的字体同时清理持久化数据；本机字体只是移出可用列表，不动系统安装
+   */
+  const handleRemoveFont = async (f: FontPickerValue) => {
+    if (!confirm(`确定要移除字体"${f.label}"吗？`)) return;
+    if (f.source === 'file') await removeUserFont(f.family);
+    removeCustomFont(f.family);
+    if (selected?.family === f.family) setSelected(null);
   };
 
   const handleApply = () => {
@@ -128,6 +133,17 @@ export default function FontPicker({ open, onClose, onApply }: FontPickerProps) 
               <span className={`asset-tag ${f.source === 'file' ? 'tag-workspace' : ''}`}>
                 {f.source === 'local' ? '本机' : '文件'}
               </span>
+              <button
+                className="modal-close"
+                style={{ width: 18, height: 18, fontSize: 13, marginLeft: 4 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleRemoveFont(f);
+                }}
+                title="移除"
+              >
+                ×
+              </button>
             </div>
           ))}
           {fonts.length === 0 && (
