@@ -475,3 +475,30 @@ export class InferredImageRenderer {
 
 /** 渲染器联合类型 */
 export type WindowRenderer = SystemImageRenderer | InferredImageRenderer;
+
+/**
+ * 共享 System 图渲染器实例
+ *
+ * 同一个 (图片引用, 透明色) 只创建一次渲染器。rendererId 稳定之后，位图字形缓存的
+ * 键才能被复用；否则每渲染一趟都新建渲染器（rendererId 单调自增），
+ * 缓存会以「每趟新增一整批、永不命中」的方式无界增长。
+ */
+const sharedSystemRenderers = new WeakMap<LoadedImage, Map<string, SystemImageRenderer>>();
+
+export function getSystemImageRenderer(
+  image: LoadedImage,
+  transparentColor: string,
+): SystemImageRenderer {
+  let byColor = sharedSystemRenderers.get(image);
+  if (!byColor) {
+    byColor = new Map<string, SystemImageRenderer>();
+    sharedSystemRenderers.set(image, byColor);
+  }
+  let renderer = byColor.get(transparentColor);
+  if (!renderer) {
+    renderer = new SystemImageRenderer(image, transparentColor);
+    byColor.set(transparentColor, renderer);
+  }
+  return renderer;
+}
+

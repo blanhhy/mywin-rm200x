@@ -116,6 +116,15 @@ function findGlyph(fontId: BitmapFontId, code: number): GlyphResult {
 const glyphCache = new Map<string, HTMLCanvasElement>();
 
 /**
+ * 缓存条目上限（兜底）
+ *
+ * 正常情况下同一 (图片, 透明色) 复用同一个渲染器，rendererId 稳定，
+ * 条目数收敛在「字形 × 色块位置 × 字体」的量级；这里只是保证任何
+ * 新增缓存键的路径都不会让缓存无界增长。
+ */
+const GLYPH_CACHE_MAX = 8192;
+
+/**
  * 渲染单个位图字形为 canvas
  *
  * 与 EasyRPG Font::RenderImpl 完全一致的着色逻辑：
@@ -200,6 +209,8 @@ function getBitmapGlyph(
 
   ctx.putImageData(imageData, 0, 0);
 
+  // 条目数超限时整体清空
+  if (glyphCache.size >= GLYPH_CACHE_MAX) glyphCache.clear();
   glyphCache.set(cacheKey, canvas);
   return canvas;
 }
