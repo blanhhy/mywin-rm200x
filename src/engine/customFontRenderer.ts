@@ -7,7 +7,7 @@
 //   - 可选的"像素完美"模式：超采样栅格化后按源像素块二值化，
 //     专门给"设计网格与画布像素对齐"的像素字体用
 //     （这类字体在原生字号下会被抗锯齿填平 1px 缝隙）
-//   - 只有 12px 能用 System 色盘（\c[n]）；其他字号一律白色兜底，
+//   - 只有实际字形为 12px 时能用 System 色盘（\c[n]）；其他尺寸一律白色兜底，
 //     想换色只能用 \c[RRGGBB] 扩展语法
 
 import { RPG_CONSTANTS, DEFAULT_TEXT_RGB, type CustomFontConfig } from '../types';
@@ -51,11 +51,16 @@ interface FontGeometry {
   descent: number;
 }
 
-/** 落地字形：x 为整数像素位置，rgb 为已解析好的颜色 */
+/** 落地字形：x 为整数像素位置 */
 interface PlacedGlyph {
   ch: string;
   x: number;
-  rgb: number;
+  /** 字形步进宽度（System 色盘按像素取色时用来定位字形格） */
+  w: number;
+  /** 显式颜色（\c[RRGGBB] 或白色兜底）；null = 按 System 色盘逐像素取色 */
+  rgb: number | null;
+  /** System 色盘索引 */
+  colorIndex: number;
 }
 
 /** 一行的排版结果 */
@@ -88,7 +93,14 @@ function resolveGeometry(font: CustomFontConfig): FontGeometry {
   const ctx = getMeasureContext();
   ctx.font = `${size}px "${family}"`;
   const metrics = ctx.measureText('Mg');
-  const ascent = Math.ceil(metrics.fontBoundingBoxAscent ?? size * 0.8);
+  // 像素完美模式按"墨迹顶部"对齐：点阵字体的大写字高往往比字体度量小 1~2px
+  // （文泉驿 15px 时 fontBoundingBoxAscent=12，而 CJK 实际墨迹只有 10px），
+  // 用字体度量会把字整体压低，二值化后和内置点阵错位。
+  const inkAscent = font.pixelPerfect
+    ? Math.round(ctx.measureText('永').actualBoundingBoxAscent)
+    : 0;
+  const ascent =
+    inkAscent > 0 ? inkAscent : Math.ceil(metrics.fontBoundingBoxAscent ?? size * 0.8);
   const descent = Math.ceil(metrics.fontBoundingBoxDescent ?? size * 0.2);
   return {
     family,
@@ -101,20 +113,93 @@ function resolveGeometry(font: CustomFontConfig): FontGeometry {
 }
 
 /**
- * 解析某一段文字的颜色
- * \c[RRGGBB] 显式颜色优先；否则只有 12px 能查 System 色盘，其余一律白色
+ * 字形是否正好是 12px 点阵尺寸
+ *
+ * System 色盘是按像素位置从 16×16 色块取色的，只有 12px 字形能和内置字体一样
+ * 对上色块，所以只允许这个尺寸查色盘。
+ *
+ * 判断依据是实际字形尺寸，而不是 CSS 字号：点阵字体的 em 常常大于字形本身
+ * （"文泉驿点阵宋体 12px"要用 15px 才能落在设计网格上，但字形就是 12px）。
+ * 全角字符的步进宽度在 12px 字形下正好是 12，用它来识别最可靠。
  */
-function resolveSegmentColor(
-  rgb: number | undefined,
-  colorIndex: number,
+function isTwelvePixelGlyph(geo: FontGeometry): boolean {
+  const ctx = getMeasureContext();
+  ctx.font = fontSpec(geo);
+  return Math.abs(ctx.measureText('永').width - RPG_CONSTANTS.FULL_WIDTH) < 0.5;
+}
+
+/**
+ * 渲染一个样字，返回"中间过渡像素"（alpha 160~223）占全部墨迹像素的比例
+ *
+ * 点阵字体在原生尺寸下，轮廓边界落在整数像素上，亮度几乎是二值的：
+ * 核心 ≥224，抗锯齿虚边 <160，中间过渡像素接近 0。
+ * 非原生尺寸下轮廓落在半像素上，过渡像素会大量出现。
+ */
+function probeMidRatio(family: string, size: number): number {
+  const W = size * 2 + 12;
+  const H = size * 3 + 12;
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const ctx = cv.getContext('2d', { willReadFrequently: true })!;
+  ctx.font = `${size}px "${family}"`;
+  const ascent = Math.ceil(ctx.measureText('Mg').fontBoundingBoxAscent ?? size * 0.8);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('永', 4, 4 + ascent);
+  const data = ctx.getImageData(0, 0, W, H).data;
+  let ink = 0;
+  let mid = 0;
+  for (let i = 3; i < data.length; i += 4) {
+    const a = data[i];
+    if (a === 0) continue;
+    ink++;
+    if (a >= 160 && a < 224) mid++;
+  }
+  return ink === 0 ? 1 : mid / ink;
+}
+
+/**
+ * 找出字体真正落在像素网格上的字号（点阵字体的原生尺寸）
+ *
+ * 只返回过渡像素占比接近 0 的候选；普通轮廓字体在任何字号下都达不到这个条件，
+ * 因此返回 null，调用方保持用户当前字号即可。
+ * 有多个候选时（原生尺寸的整数倍也对齐），取距离当前字号最近的一个。
+ */
+export function findNativePixelSize(font: CustomFontConfig): number | null {
+  const family = font.family;
+  if (!family) return null;
+
+  const requested = Math.max(1, Math.round(font.size));
+  const lo = Math.max(4, Math.floor(requested * 0.5));
+  const hi = Math.min(96, Math.ceil(requested * 2));
+  let best: number | null = null;
+  let bestScore = Infinity;
+  for (let n = lo; n <= hi; n++) {
+    if (probeMidRatio(family, n) >= 0.05) continue;
+    const score = Math.abs(n - requested);
+    if (score < bestScore) {
+      bestScore = score;
+      best = n;
+    }
+  }
+  return best;
+}
+
+/**
+ * 解析某一段文字的着色方式
+ * \c[RRGGBB] 显式颜色优先；否则只有 12px 字形能查 System 色盘，其余一律白色
+ */
+function resolveSegmentPaint(
+  seg: ParsedLine['segments'][number],
   geo: FontGeometry,
   colorSource: TextColorSource | null,
-): number {
-  if (rgb !== undefined) return rgb;
-  if (colorSource && geo.size === RPG_CONSTANTS.FONT_HEIGHT) {
-    return colorSource.getColorRGB(colorIndex);
-  }
-  return DEFAULT_TEXT_RGB;
+): { rgb: number | null; colorIndex: number } {
+  if (seg.rgb !== undefined) return { rgb: seg.rgb, colorIndex: seg.color };
+  // rgb = null：交给绘制阶段按 System 色盘逐像素取色（与内置位图字体一致）
+  if (colorSource && isTwelvePixelGlyph(geo)) return { rgb: null, colorIndex: seg.color };
+  return { rgb: DEFAULT_TEXT_RGB, colorIndex: seg.color };
 }
 
 /** 按逐字符整数位置排版一行 */
@@ -138,11 +223,18 @@ function layoutLine(
       lastWasGlyph = false;
       continue;
     }
-    const rgb = resolveSegmentColor(seg.rgb, seg.color, geo, colorSource);
+    const paint = resolveSegmentPaint(seg, geo, colorSource);
     for (const ch of seg.text) {
-      glyphs.push({ ch, x: Math.round(penX), rgb });
       // 逐字符累加小数位置、落地时取整，保证间距均匀且不出现半像素
-      penX += ctx.measureText(ch).width + geo.letterSpacing;
+      const advance = ctx.measureText(ch).width;
+      glyphs.push({
+        ch,
+        x: Math.round(penX),
+        w: Math.max(1, Math.round(advance)),
+        rgb: paint.rgb,
+        colorIndex: paint.colorIndex,
+      });
+      penX += advance + geo.letterSpacing;
       lastWasGlyph = true;
     }
   }
@@ -153,72 +245,105 @@ function layoutLine(
   };
 }
 
-/** 0xRRGGBB → CSS 颜色 */
-function cssOf(rgb: number): string {
-  return `rgb(${(rgb >> 16) & 0xff}, ${(rgb >> 8) & 0xff}, ${rgb & 0xff})`;
-}
-
-/** 把一组字形放大 ss 倍栅格化，返回超采样掩码 */
-function rasterizeHi(
+/**
+ * 栅格化一组字形，返回每个源像素的覆盖率（0..255）
+ *
+ * 像素完美模式下会先放大到 4 倍以上再按源像素块求平均，
+ * 这样 8px 这类小字号里被抗锯齿填平的 1px 缝隙才能还原。
+ * 普通模式按原生尺寸栅格化，保留浏览器自己的抗锯齿。
+ */
+function coverageOf(
   geo: FontGeometry,
   glyphs: PlacedGlyph[],
   wSrc: number,
   hSrc: number,
-  ss: number,
-): ImageData {
-  const hi = document.createElement('canvas');
-  hi.width = wSrc * ss;
-  hi.height = hSrc * ss;
-  const ctx = hi.getContext('2d', { willReadFrequently: true })!;
+  pixelPerfect: boolean,
+): { cov: Uint8ClampedArray; ss: number } {
+  const ss = pixelPerfect ? supersampleOf(geo.size) : 1;
+  const cv = document.createElement('canvas');
+  cv.width = wSrc * ss;
+  cv.height = hSrc * ss;
+  const ctx = cv.getContext('2d', { willReadFrequently: true })!;
   ctx.font = `${geo.size * ss}px "${geo.family}"`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#ffffff';
   for (const g of glyphs) ctx.fillText(g.ch, g.x * ss, geo.ascent * ss);
-  return ctx.getImageData(0, 0, hi.width, hi.height);
-}
+  const src = ctx.getImageData(0, 0, cv.width, cv.height).data;
+  const cov = new Uint8ClampedArray(wSrc * hSrc);
 
-/**
- * 把超采样掩码按源像素块求平均并二值化，整块填入同一颜色
- *
- * 只对"设计网格与画布像素整数对齐"的像素字体有意义：这种字体在原生字号下
- * 每个设计像素正好是一个画布像素，但它在小字号下是按轮廓 + 抗锯齿栅格化的，
- * 1 像素宽的缝隙会被填平、笔画会粘连。放大后按块平均才能还原设计网格。
- *
- * 对普通轮廓字体不能这么做——抗锯齿的边缘像素正是字形的一部分，
- * 按 50% 阈值整块丢弃会导致笔画变细、断线、缺像素。
- */
-function thresholdMask(hi: ImageData, ss: number, rgb: number): ImageData {
-  const w = Math.floor(hi.width / ss);
-  const h = Math.floor(hi.height / ss);
-  const out = new ImageData(w, h);
-  const src = hi.data;
-  const dst = out.data;
+  if (ss === 1) {
+    for (let i = 0; i < cov.length; i++) cov[i] = src[i * 4 + 3];
+    return { cov, ss };
+  }
+
   const area = ss * ss;
-  const hiW = hi.width;
-  const r = (rgb >> 16) & 0xff;
-  const g = (rgb >> 8) & 0xff;
-  const b = rgb & 0xff;
-  for (let py = 0; py < h; py++) {
-    for (let px = 0; px < w; px++) {
+  const hiW = wSrc * ss;
+  for (let py = 0; py < hSrc; py++) {
+    for (let px = 0; px < wSrc; px++) {
       let sum = 0;
       for (let dy = 0; dy < ss; dy++) {
         const base = ((py * ss + dy) * hiW + px * ss) * 4 + 3;
         for (let dx = 0; dx < ss; dx++) sum += src[base + dx * 4];
       }
-      if (sum / area < ALPHA_THRESHOLD) continue;
-      const idx = (py * w + px) * 4;
-      dst[idx] = r;
-      dst[idx + 1] = g;
-      dst[idx + 2] = b;
-      dst[idx + 3] = 255;
+      cov[py * wSrc + px] = sum / area;
     }
   }
-  return out;
+  return { cov, ss };
 }
 
-/** 像素完美模式：把一组字形着色成单色后贴到目标画布 */
-function drawPixelGlyphs(
+/** 读取 System 图里一个 16×16 色块的像素 */
+function readColorBlock(
+  systemCanvas: HTMLCanvasElement,
+  x: number,
+  y: number,
+): Uint8ClampedArray {
+  const ctx = systemCanvas.getContext('2d', { willReadFrequently: true })!;
+  return ctx.getImageData(x, y, 16, 16).data;
+}
+
+/**
+ * 找到覆盖某个像素的字形格，返回格内坐标（0..15）
+ *
+ * EasyRPG 是按"字形内像素位置"从 16×16 色块取色的，这里保持同样的规则；
+ * 抗锯齿溢出的像素夹到最近的格边缘，避免取到色块外。
+ */
+function cellCoord(glyphs: PlacedGlyph[], px: number, py: number): { dx: number; dy: number } {
+  let target = glyphs[0];
+  let bestDist = Infinity;
+  for (const g of glyphs) {
+    if (px >= g.x && px < g.x + g.w) {
+      target = g;
+      bestDist = 0;
+      break;
+    }
+    const dist = px < g.x ? g.x - px : px - (g.x + g.w - 1);
+    if (dist < bestDist) {
+      bestDist = dist;
+      target = g;
+    }
+  }
+  return {
+    dx: Math.min(15, Math.max(0, px - target.x)),
+    dy: Math.min(15, Math.max(0, py)),
+  };
+}
+
+/** 一层的着色方式 */
+interface LayerPaint {
+  /** 显式颜色；null = 按 System 色盘逐像素取色 */
+  rgb: number | null;
+  /** 色块在 System 图中的取样起点（rgb 为 null 时有效） */
+  src: { x: number; y: number } | null;
+}
+
+/**
+ * 绘制一层字形（阴影层或文字层）
+ *
+ * 覆盖率决定 alpha；颜色可以整层统一，也可以按像素位置从 System 色块取，
+ * 和内置位图字体的着色方式完全一致。
+ */
+function drawLayer(
   ctx: CanvasRenderingContext2D,
   geo: FontGeometry,
   glyphs: PlacedGlyph[],
@@ -226,22 +351,63 @@ function drawPixelGlyphs(
   hSrc: number,
   originX: number,
   lineTop: number,
-  rgb: number,
+  pixelPerfect: boolean,
+  paint: LayerPaint,
+  colorSource: TextColorSource | null,
 ): void {
-  const ss = supersampleOf(geo.size);
-  const mask = document.createElement('canvas');
-  mask.width = wSrc;
-  mask.height = hSrc;
-  mask
-    .getContext('2d')!
-    .putImageData(thresholdMask(rasterizeHi(geo, glyphs, wSrc, hSrc, ss), ss, rgb), 0, 0);
-  ctx.drawImage(mask, originX, lineTop);
+  const { cov, ss } = coverageOf(geo, glyphs, wSrc, hSrc, pixelPerfect);
+  // 原生尺寸下只保留"实心核心"像素：网格对齐的点阵字体在 15px 时，
+  // 核心笔画 alpha 在 224 以上，而笔画外还挂着一圈 alpha 80~140 的虚边
+  // （Chrome 的抗锯齿），阈值 128 会把它们也点亮，看起来就是"字外多了像素"。
+  const threshold = pixelPerfect ? (ss === 1 ? 224 : ALPHA_THRESHOLD) : 0;
+
+  const block =
+    paint.rgb === null && paint.src && colorSource
+      ? readColorBlock(colorSource.systemCanvas, paint.src.x, paint.src.y)
+      : null;
+
+  const solidR = paint.rgb !== null ? (paint.rgb >> 16) & 0xff : 0;
+  const solidG = paint.rgb !== null ? (paint.rgb >> 8) & 0xff : 0;
+  const solidB = paint.rgb !== null ? paint.rgb & 0xff : 0;
+
+  const out = new ImageData(wSrc, hSrc);
+  const dst = out.data;
+  for (let py = 0; py < hSrc; py++) {
+    for (let px = 0; px < wSrc; px++) {
+      let alpha = cov[py * wSrc + px];
+      if (alpha === 0) continue;
+      if (pixelPerfect) {
+        if (alpha < threshold) continue;
+        alpha = 255;
+      }
+      const idx = (py * wSrc + px) * 4;
+      if (block) {
+        const { dx, dy } = cellCoord(glyphs, px, py);
+        const si = (dy * 16 + dx) * 4;
+        dst[idx] = block[si];
+        dst[idx + 1] = block[si + 1];
+        dst[idx + 2] = block[si + 2];
+      } else {
+        dst[idx] = solidR;
+        dst[idx + 1] = solidG;
+        dst[idx + 2] = solidB;
+      }
+      dst[idx + 3] = alpha;
+    }
+  }
+
+  const layer = document.createElement('canvas');
+  layer.width = wSrc;
+  layer.height = hSrc;
+  layer.getContext('2d')!.putImageData(out, 0, 0);
+  ctx.drawImage(layer, originX, lineTop);
 }
 
 /**
  * 绘制一行字形
  *
- * forcedRGB 为 null 时按每个字形自己的颜色绘制（文字层），否则整行统一用该色（阴影层）。
+ * paintOf 返回每个字形的着色方式（阴影层统一、文字层逐字形）；
+ * 连续相同着色的字形合成一层，避免相邻不同颜色互相串色。
  */
 function drawLine(
   ctx: CanvasRenderingContext2D,
@@ -250,41 +416,33 @@ function drawLine(
   originX: number,
   lineTop: number,
   pixelPerfect: boolean,
-  forcedRGB: number | null,
+  paintOf: (g: PlacedGlyph) => LayerPaint,
+  colorSource: TextColorSource | null,
 ): void {
   const glyphs = layout.glyphs;
-
-  if (!pixelPerfect) {
-    // 直接绘制：交给浏览器栅格化，保留抗锯齿
-    ctx.font = fontSpec(geo);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-    let current = -1;
-    for (const g of glyphs) {
-      const rgb = forcedRGB ?? g.rgb;
-      if (rgb !== current) {
-        ctx.fillStyle = cssOf(rgb);
-        current = rgb;
-      }
-      ctx.fillText(g.ch, originX + g.x, lineTop + geo.ascent);
-    }
-    return;
-  }
-
-  // 像素完美模式：宽高多留 2px 余量，避免最右侧字形或阴影被裁切
+  if (glyphs.length === 0) return;
+  // 阴影右下偏移 1px，多留 2px 余量避免最右侧字形被裁切
   const wSrc = Math.max(1, Math.ceil(layout.width) + 2);
   const hSrc = Math.max(1, geo.ascent + geo.descent + 1);
 
-  if (forcedRGB !== null) {
-    drawPixelGlyphs(ctx, geo, glyphs, wSrc, hSrc, originX, lineTop, forcedRGB);
-    return;
-  }
+  const samePaint = (a: PlacedGlyph, b: PlacedGlyph) =>
+    a.rgb === b.rgb && a.colorIndex === b.colorIndex;
 
-  // 按连续同色字形分组：一张掩码只能填一种颜色
   let start = 0;
   for (let i = 1; i <= glyphs.length; i++) {
-    if (i === glyphs.length || glyphs[i].rgb !== glyphs[start].rgb) {
-      drawPixelGlyphs(ctx, geo, glyphs.slice(start, i), wSrc, hSrc, originX, lineTop, glyphs[start].rgb);
+    if (i === glyphs.length || !samePaint(glyphs[i], glyphs[start])) {
+      drawLayer(
+        ctx,
+        geo,
+        glyphs.slice(start, i),
+        wSrc,
+        hSrc,
+        originX,
+        lineTop,
+        pixelPerfect,
+        paintOf(glyphs[start]),
+        colorSource,
+      );
       start = i;
     }
   }
@@ -328,18 +486,25 @@ export function renderCustomFontText(opts: CustomFontRenderOptions): void {
   });
 
   // 第一趟：阴影（右下偏移 1px）
+  // 有 System 配色时阴影也按像素从阴影色块取色（与内置位图字体一致）
   if (font.shadow) {
-    const shadowRGB = colorSource ? colorSource.shadowRGB : 0x000000;
+    const shadowPaint: LayerPaint = colorSource
+      ? { rgb: null, src: colorSource.shadowSrcPos }
+      : { rgb: 0x000000, src: null };
     for (const { layout, lineTop } of rows) {
       if (layout.glyphs.length === 0) continue;
-      drawLine(ctx, geo, layout, x + 1, lineTop + 1, font.pixelPerfect, shadowRGB);
+      drawLine(ctx, geo, layout, x + 1, lineTop + 1, font.pixelPerfect, () => shadowPaint, colorSource);
     }
   }
 
   // 第二趟：文字
+  const textPaintOf = (g: PlacedGlyph): LayerPaint =>
+    g.rgb === null
+      ? { rgb: null, src: colorSource ? colorSource.getColorSrcPos(g.colorIndex) : null }
+      : { rgb: g.rgb, src: null };
   for (const { layout, lineTop } of rows) {
     if (layout.glyphs.length === 0) continue;
-    drawLine(ctx, geo, layout, x, lineTop, font.pixelPerfect, null);
+    drawLine(ctx, geo, layout, x, lineTop, font.pixelPerfect, textPaintOf, colorSource);
   }
 }
 

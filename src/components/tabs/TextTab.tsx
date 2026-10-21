@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { type SystemImageRef } from '../../types';
+import { findNativePixelSize } from '../../engine/customFontRenderer';
 import SystemPicker, { type SystemPickerValue } from '../pickers/SystemPicker';
 import FontPicker, { type FontPickerValue } from '../pickers/FontPicker';
 
@@ -59,6 +60,19 @@ export default function TextTab() {
         },
       }));
     };
+
+  const handlePixelPerfectChange = (checked: boolean) => {
+    updateConfig((c) => {
+      const next = { ...c.customFont, pixelPerfect: checked };
+      if (checked) {
+        // 勾选像素完美时，自动切换到字体真正对齐像素网格的原生尺寸
+        // （例如"文泉驿点阵宋体 12px"实际要 15px 才落在设计网格上）
+        const native = findNativePixelSize(next);
+        if (native !== null) next.size = native;
+      }
+      return { ...c, customFont: next };
+    });
+  };
 
   return (
     <div className="tab-content">
@@ -197,12 +211,7 @@ export default function TextTab() {
             type="checkbox"
             checked={font.pixelPerfect}
             disabled={!fontSelected}
-            onChange={(e) =>
-              updateConfig((c) => ({
-                ...c,
-                customFont: { ...c.customFont, pixelPerfect: e.target.checked },
-              }))
-            }
+            onChange={(e) => handlePixelPerfectChange(e.target.checked)}
           />
           <span>像素完美（像素字体专用）</span>
         </label>
