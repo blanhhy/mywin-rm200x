@@ -5,6 +5,7 @@ import { parsePalette0 } from '../../engine/transparentColorInference';
 import { readPictureDataUrl } from '../../engine/workspace';
 import { type BackgroundMode, type StretchMode, type SystemImageRef } from '../../types';
 import SystemPicker, { type SystemPickerValue } from '../pickers/SystemPicker';
+import BackgroundFrameEditor, { type TileRect } from '../BackgroundFrameEditor';
 
 /** 将 data URL 解码为字节，用于解析图片格式与调色板 */
 function dataUrlToBytes(dataUrl: string): Uint8Array {
@@ -18,7 +19,18 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
 export default function BackgroundTab() {
   const { config, updateConfig } = useStore();
   const [systemPickerOpen, setSystemPickerOpen] = useState(false);
+  const [frameEditorOpen, setFrameEditorOpen] = useState(false);
   const [referenceDragOver, setReferenceDragOver] = useState(false);
+
+  /** 应用可视化框选的结果：同时更新角框/边框厚度与底纹区域 */
+  const handleFrameApply = (corner: number, edge: number, rect: TileRect) => {
+    updateConfig((c) => ({
+      ...c,
+      backgroundImageCornerThickness: corner,
+      backgroundImageEdgeThickness: edge,
+      backgroundImageTileRect: rect,
+    }));
+  };
 
   const handleModeChange = (mode: BackgroundMode) => {
     updateConfig((c) => ({ ...c, backgroundMode: mode }));
@@ -41,12 +53,16 @@ export default function BackgroundTab() {
 
   /** 应用参考图片（上传与拖拽共用）：重置底纹推断区域，并按调色板初始化透明色 */
   const applyReferenceImage = (img: HTMLImageElement, palette0: string | null) => {
-    const t = config.backgroundImageBorderThickness;
     updateConfig((c) => ({
       ...c,
       backgroundImage: img,
-      // 更换图片时，重置 tile rect 为"边框内左上角 4×4"
-      backgroundImageTileRect: { x: t, y: t, w: 4, h: 4 },
+      // 更换图片时，重置 tile rect 为"左上角角框右下角的 2×2"
+      backgroundImageTileRect: {
+        x: c.backgroundImageCornerThickness,
+        y: c.backgroundImageCornerThickness,
+        w: 2,
+        h: 2,
+      },
       // 自动检测到调色板 idx-0 则默认启用透明色，否则不启用
       backgroundImageTransparentColor: palette0,
       backgroundImageUseTransparentColor: palette0 !== null,
@@ -107,35 +123,35 @@ export default function BackgroundTab() {
     applyReferenceImage(img, palette0);
   };
 
-  const handleBorderThickness = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /** 角框边长（≤8）；底纹框若吸附在左上角角框上则跟着移动 */
+  const handleCornerThickness = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = Number(e.target.value);
-    if (!Number.isNaN(v) && v >= 0) {
-      const borderT = Math.floor(v);
-      updateConfig((c) => {
-        const current = c.backgroundImageTileRect;
-        const hasImage = !!c.backgroundImage;
-        let imgW = 0, imgH = 0;
-        if (hasImage) {
-          const img = c.backgroundImage as HTMLImageElement;
-          imgW = img.naturalWidth || img.width;
-          imgH = img.naturalHeight || img.height;
-        }
-        // 如果 tile rect 还没设置过（或与边框冲突），自动调整到"除去边框后的左上角"
-        const needAuto = !current
-          || current.x < borderT
-          || current.y < borderT
-          || (current.x + current.w > imgW - borderT && imgW > 0)
-          || (current.y + current.h > imgH - borderT && imgH > 0);
-        const tileRect = needAuto && imgW > 0 && imgH > 0
-          ? { x: borderT, y: borderT, w: 4, h: 4 }
-          : (current ?? { x: borderT, y: borderT, w: 4, h: 4 });
-        return {
-          ...c,
-          backgroundImageBorderThickness: borderT,
-          backgroundImageTileRect: tileRect,
-        };
-      });
-    }
+    if (Number.isNaN(v)) return;
+    const next = Math.max(0, Math.min(8, Math.floor(v)));
+    updateConfig((c) => {
+      const prev = c.backgroundImageCornerThickness;
+      const current = c.backgroundImageTileRect;
+      const tileRect = !current
+        ? { x: next, y: next, w: 2, h: 2 }
+        : current.x === prev && current.y === prev
+          ? { ...current, x: next, y: next }
+          : current;
+      return {
+        ...c,
+        backgroundImageCornerThickness: next,
+        backgroundImageTileRect: tileRect,
+      };
+    });
+  };
+
+  /** 边框厚度（≤16，四边同步） */
+  const handleEdgeThickness = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = Number(e.target.value);
+    if (Number.isNaN(v)) return;
+    updateConfig((c) => ({
+      ...c,
+      backgroundImageEdgeThickness: Math.max(0, Math.min(16, Math.floor(v))),
+    }));
   };
 
   const handleTileRectChange = (
@@ -146,10 +162,10 @@ export default function BackgroundTab() {
     updateConfig((c) => ({
       ...c,
       backgroundImageTileRect: {
-        x: c.backgroundImageTileRect?.x ?? c.backgroundImageBorderThickness,
-        y: c.backgroundImageTileRect?.y ?? c.backgroundImageBorderThickness,
-        w: c.backgroundImageTileRect?.w ?? 4,
-        h: c.backgroundImageTileRect?.h ?? 4,
+        x: c.backgroundImageTileRect?.x ?? c.backgroundImageCornerThickness,
+        y: c.backgroundImageTileRect?.y ?? c.backgroundImageCornerThickness,
+        w: c.backgroundImageTileRect?.w ?? 2,
+        h: c.backgroundImageTileRect?.h ?? 2,
         [key]: Math.max(1, Math.floor(value)),
       },
     }));
@@ -301,14 +317,30 @@ export default function BackgroundTab() {
           </div>
           <div className="field-group">
             <label className="field-label">边框厚度</label>
-            <input
-              type="number"
-              className="number-input"
-              value={config.backgroundImageBorderThickness}
-              onChange={handleBorderThickness}
-              min={0}
-              max={16}
-            />
+            <div className="tile-rect-row">
+              <label>
+                角
+                <input
+                  type="number"
+                  className="number-input"
+                  value={config.backgroundImageCornerThickness}
+                  onChange={handleCornerThickness}
+                  min={0}
+                  max={8}
+                />
+              </label>
+              <label>
+                边
+                <input
+                  type="number"
+                  className="number-input"
+                  value={config.backgroundImageEdgeThickness}
+                  onChange={handleEdgeThickness}
+                  min={0}
+                  max={16}
+                />
+              </label>
+            </div>
           </div>
           <div className="field-group">
             <label className="field-label">底纹推断</label>
@@ -321,7 +353,7 @@ export default function BackgroundTab() {
                 <input
                   type="number"
                   className="number-input"
-                  value={config.backgroundImageTileRect?.x ?? config.backgroundImageBorderThickness}
+                  value={config.backgroundImageTileRect?.x ?? config.backgroundImageCornerThickness}
                   onChange={(e) => handleTileRectChange('x', Number(e.target.value))}
                   min={0}
                 />
@@ -331,7 +363,7 @@ export default function BackgroundTab() {
                 <input
                   type="number"
                   className="number-input"
-                  value={config.backgroundImageTileRect?.y ?? config.backgroundImageBorderThickness}
+                  value={config.backgroundImageTileRect?.y ?? config.backgroundImageCornerThickness}
                   onChange={(e) => handleTileRectChange('y', Number(e.target.value))}
                   min={0}
                 />
@@ -341,7 +373,7 @@ export default function BackgroundTab() {
                 <input
                   type="number"
                   className="number-input"
-                  value={config.backgroundImageTileRect?.w ?? 4}
+                  value={config.backgroundImageTileRect?.w ?? 2}
                   onChange={(e) => handleTileRectChange('w', Number(e.target.value))}
                   min={1}
                 />
@@ -351,12 +383,21 @@ export default function BackgroundTab() {
                 <input
                   type="number"
                   className="number-input"
-                  value={config.backgroundImageTileRect?.h ?? 4}
+                  value={config.backgroundImageTileRect?.h ?? 2}
                   onChange={(e) => handleTileRectChange('h', Number(e.target.value))}
                   min={1}
                 />
               </label>
             </div>
+            <button
+              type="button"
+              className="upload-btn frame-editor-open-btn"
+              onClick={() => setFrameEditorOpen(true)}
+              disabled={!config.backgroundImage}
+              title="在放大的参照图上框选边框厚度与底纹区域"
+            >
+              可视化框选
+            </button>
           </div>
         </>
       )}
@@ -394,6 +435,16 @@ export default function BackgroundTab() {
         onClose={() => setSystemPickerOpen(false)}
         onApply={handleSystemApply}
         title="选择背景 System 图"
+      />
+
+      <BackgroundFrameEditor
+        open={frameEditorOpen}
+        image={config.backgroundImage}
+        cornerThickness={config.backgroundImageCornerThickness}
+        edgeThickness={config.backgroundImageEdgeThickness}
+        tileRect={config.backgroundImageTileRect}
+        onClose={() => setFrameEditorOpen(false)}
+        onApply={handleFrameApply}
       />
     </div>
   );

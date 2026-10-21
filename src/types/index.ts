@@ -145,7 +145,10 @@ export interface MessageWindowConfig {
   backgroundSystem: SystemImageRef;
   /** 当 backgroundMode='image' 时使用 */
   backgroundImage: LoadedImage | null;
-  backgroundImageBorderThickness: number;
+  /** 四角角框的边长（正方形，所有角同步） */
+  backgroundImageCornerThickness: number;
+  /** 四边边框的厚度（四条边同步） */
+  backgroundImageEdgeThickness: number;
   backgroundImageTileRect: { x: number; y: number; w: number; h: number } | null;
   /** 是否对推断图片启用透明色处理 */
   backgroundImageUseTransparentColor: boolean;
@@ -193,7 +196,8 @@ export const DEFAULT_CONFIG: MessageWindowConfig = {
   backgroundMode: 'system',
   backgroundSystem: { name: 'System', image: null, transparentColor: '#000000' },
   backgroundImage: null,
-  backgroundImageBorderThickness: 8,
+  backgroundImageCornerThickness: 6,
+  backgroundImageEdgeThickness: 6,
   backgroundImageTileRect: null,
   backgroundImageUseTransparentColor: false,
   backgroundImageTransparentColor: null,

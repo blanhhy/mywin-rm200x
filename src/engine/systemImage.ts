@@ -238,8 +238,10 @@ export class SystemImageRenderer {
   }
 }
 
-/** 边框厚度上限（参考 RPG Maker 200x System 图边框区域尺寸） */
-const MAX_BORDER_THICKNESS = 16;
+/** 推断图片：角框边长上限 */
+const MAX_CORNER_THICKNESS = 8;
+/** 推断图片：边框厚度上限（参考 RPG Maker 200x System 图边框区域尺寸） */
+const MAX_EDGE_THICKNESS = 16;
 
 /**
  * 推断式背景渲染器：根据一张完整窗口图片推断边框与底纹
@@ -251,13 +253,16 @@ const MAX_BORDER_THICKNESS = 16;
  *   再按正常 System 图的"平铺/拉伸"逻辑绘制到窗口内容区。
  *
  * 边框处理：
- *   四角直接取图片四个角的 borderThickness×borderThickness 区域。
- *   四条边取对应位置的源像素，按源图边长周期平铺（模拟 System 图行为），
- *   带 t/2 相位偏移使图案对称。
+ *   四角取图片四个角的 cornerThickness×cornerThickness 区域；
+ *   四边取角框之间的条带（厚度 edgeThickness），
+ *   按条带长度周期平铺，填满两角之间的窗口边缘。
  */
 export class InferredImageRenderer {
   private source: LoadedImage;
-  private borderThickness: number;
+  /** 角框边长（四个角同步） */
+  private cornerThickness: number;
+  /** 边框厚度（四条边同步） */
+  private edgeThickness: number;
   private tileRect: Rect;
   private transparentRGB: [number, number, number] | null;
   private processedCanvas: HTMLCanvasElement;
@@ -268,15 +273,25 @@ export class InferredImageRenderer {
 
   constructor(
     source: LoadedImage,
-    borderThickness: number,
+    cornerThickness: number,
+    edgeThickness: number,
     tileRect: Rect,
     transparentColor: string | null = null,
   ) {
     this.source = source;
     const sw = source instanceof HTMLImageElement ? source.naturalWidth : source.width;
     const sh = source instanceof HTMLImageElement ? source.naturalHeight : source.height;
-    const maxT = Math.min(MAX_BORDER_THICKNESS, Math.floor(Math.min(sw, sh) / 2));
-    this.borderThickness = Math.max(0, Math.min(borderThickness, maxT));
+    const half = Math.floor(Math.min(sw, sh) / 2);
+    this.cornerThickness = Math.max(
+      0,
+      Math.min(cornerThickness, MAX_CORNER_THICKNESS, half),
+    );
+    // 角框会占用两端的空间，剩余部分才是可用的边条长度
+    const maxEdge = Math.max(
+      0,
+      Math.min(MAX_EDGE_THICKNESS, Math.min(sw, sh) - this.cornerThickness * 2),
+    );
+    this.edgeThickness = Math.max(0, Math.min(edgeThickness, maxEdge));
     this.tileRect = tileRect;
     this.transparentRGB = transparentColor ? parseColor(transparentColor) : null;
     this.processedCanvas = document.createElement('canvas');
@@ -362,11 +377,13 @@ export class InferredImageRenderer {
     stretch: boolean,
   ): void {
     if (w <= 0 || h <= 0) return;
-    const t = this.borderThickness;
-    const innerX = x + t;
-    const innerY = y + t;
-    const innerW = Math.max(w - t * 2, 0);
-    const innerH = Math.max(h - t * 2, 0);
+    // 角框与边框厚度不同：取较小值作为内区偏移，
+    // 保证角框较大时边条下方不会露出未绘制的空隙（边框随后覆盖在内区之上）
+    const inset = Math.min(this.cornerThickness, this.edgeThickness);
+    const innerX = x + inset;
+    const innerY = y + inset;
+    const innerW = Math.max(w - inset * 2, 0);
+    const innerH = Math.max(h - inset * 2, 0);
     if (innerW <= 0 || innerH <= 0) return;
     if (!this.bgTile32) return;
 
@@ -387,9 +404,10 @@ export class InferredImageRenderer {
   /**
    * 绘制窗口边框
    *
-   * 四角：直接取源图四个角 borderThickness×borderThickness 像素。
-   * 四边：取对应位置的边框像素，按源图边长周期平铺，
-   *       带 t/2 相位偏移使图案对称（模仿 System 图的 8px 偏移）。
+   * 四角：直接取源图四个角 cornerThickness×cornerThickness 像素。
+   * 四边：取两角之间的条带（厚度 edgeThickness），按源条带长度周期平铺，
+   *       目标长度 = 窗口边长 - 2×角框边长。
+   * 先画四边、后画四角，接缝处由角覆盖，避免出现缝隙。
    */
   drawBorder(
     ctx: CanvasRenderingContext2D,
@@ -399,45 +417,38 @@ export class InferredImageRenderer {
     h: number,
   ): void {
     if (w <= 0 || h <= 0) return;
-    const t = this.borderThickness;
-    if (t <= 0) return;
+    const c = this.cornerThickness;
+    const e = this.edgeThickness;
+    if (c <= 0 && e <= 0) return;
     ctx.imageSmoothingEnabled = false;
     const src = this.processedCanvas;
     const sw = src.width;
     const sh = src.height;
 
-    ctx.drawImage(src, 0, 0, t, t, x, y, t, t);
-    ctx.drawImage(src, sw - t, 0, t, t, x + w - t, y, t, t);
-    ctx.drawImage(src, 0, sh - t, t, t, x, y + h - t, t, t);
-    ctx.drawImage(src, sw - t, sh - t, t, t, x + w - t, y + h - t, t, t);
+    const innerW = Math.max(w - c * 2, 0);
+    const innerH = Math.max(h - c * 2, 0);
 
-    const innerW = Math.max(w - t * 2, 0);
-    const innerH = Math.max(h - t * 2, 0);
-
-    if (innerW > 0) {
-      const edgeW = Math.max(1, sw - t * 2);
-      const phase = Math.floor(t / 2);
-      this.tileEdge(ctx,
-        { x: t, y: 0, w: edgeW, h: t },
-        x + t, y, innerW, t,
-        phase, 0);
-      this.tileEdge(ctx,
-        { x: t, y: sh - t, w: edgeW, h: t },
-        x + t, y + h - t, innerW, t,
-        phase, 0);
+    if (e > 0 && innerW > 0 && sw > c * 2) {
+      // 上下边：源条带位于两角之间，高度为边厚
+      this.tileEdge(ctx, { x: c, y: 0, w: sw - c * 2, h: e },
+        x + c, y, innerW, e, 0, 0);
+      this.tileEdge(ctx, { x: c, y: sh - e, w: sw - c * 2, h: e },
+        x + c, y + h - e, innerW, e, 0, 0);
     }
 
-    if (innerH > 0) {
-      const edgeH = Math.max(1, sh - t * 2);
-      const phase = Math.floor(t / 2);
-      this.tileEdge(ctx,
-        { x: 0, y: t, w: t, h: edgeH },
-        x, y + t, t, innerH,
-        0, phase);
-      this.tileEdge(ctx,
-        { x: sw - t, y: t, w: t, h: edgeH },
-        x + w - t, y + t, t, innerH,
-        0, phase);
+    if (e > 0 && innerH > 0 && sh > c * 2) {
+      // 左右边：源条带位于两角之间，宽度为边厚
+      this.tileEdge(ctx, { x: 0, y: c, w: e, h: sh - c * 2 },
+        x, y + c, e, innerH, 0, 0);
+      this.tileEdge(ctx, { x: sw - e, y: c, w: e, h: sh - c * 2 },
+        x + w - e, y + c, e, innerH, 0, 0);
+    }
+
+    if (c > 0) {
+      ctx.drawImage(src, 0, 0, c, c, x, y, c, c);
+      ctx.drawImage(src, sw - c, 0, c, c, x + w - c, y, c, c);
+      ctx.drawImage(src, 0, sh - c, c, c, x, y + h - c, c, c);
+      ctx.drawImage(src, sw - c, sh - c, c, c, x + w - c, y + h - c, c, c);
     }
   }
 

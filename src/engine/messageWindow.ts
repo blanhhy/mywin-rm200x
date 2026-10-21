@@ -78,13 +78,16 @@ function createBackgroundRenderer(config: MessageWindowConfig): WindowRenderer |
     return getSystemImageRenderer(ref.image, ref.transparentColor);
   }
   if (config.backgroundMode === 'image' && config.backgroundImage) {
-    const tileRect = config.backgroundImageTileRect ?? { x: 0, y: 0, w: 32, h: 32 };
+    const corner = config.backgroundImageCornerThickness;
+    // 底纹默认取角框右下角、2×2 的最小重复单位
+    const tileRect = config.backgroundImageTileRect ?? { x: corner, y: corner, w: 2, h: 2 };
     const transparentColor = config.backgroundImageUseTransparentColor
       ? config.backgroundImageTransparentColor
       : null;
     return new InferredImageRenderer(
       config.backgroundImage,
-      config.backgroundImageBorderThickness,
+      corner,
+      config.backgroundImageEdgeThickness,
       tileRect,
       transparentColor,
     );
