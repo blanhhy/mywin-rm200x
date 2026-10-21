@@ -310,10 +310,8 @@ export default function Preview() {
       {selectedPicture && (
         <div className="compare-section">
           <div className="compare-label">
-            目标图片：{compareDims ? `${compareDims.w} × ${compareDims.h}` : '…'}
-            {compareDims && (compareDims.w !== width || compareDims.h !== height) && (
-              <span className="compare-warn">（与当前尺寸不一致）</span>
-            )}
+            目标图片：{selectedPicture.fileName}<br></br>
+            目标尺寸：{compareDims ? `${compareDims.w} × ${compareDims.h}` : '…'}
           </div>
           <div className="canvas-wrapper">
             <img
@@ -399,8 +397,11 @@ export default function Preview() {
         width={440}
         footer={
           <>
+            <button className="modal-btn" onClick={() => setSizeMismatch(null)}>
+              返回调整
+            </button>
             <button
-              className="modal-btn"
+              className="modal-btn danger"
               onClick={() => {
                 const mode = sizeMismatch?.mode ?? 'indexed';
                 setSizeMismatch(null);
@@ -408,9 +409,6 @@ export default function Preview() {
               }}
             >
               仍然覆盖
-            </button>
-            <button className="modal-btn primary" onClick={() => setSizeMismatch(null)}>
-              返回调整
             </button>
           </>
         }
