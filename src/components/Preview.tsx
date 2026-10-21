@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { renderMessageWindow, computeWindowSize, loadImage } from '../engine/messageWindow';
+import { readPictureDataUrl } from '../engine/workspace';
 import { getSystemImageRenderer } from '../engine/systemImage';
 import Modal from './Modal';
 import {
@@ -62,6 +63,8 @@ export default function Preview() {
   const [compareDims, setCompareDims] = useState<{ w: number; h: number } | null>(null);
   /** 目标图片（覆盖写模式的参考图），用于 \r / \p 填充 */
   const [referenceImage, setReferenceImage] = useState<HTMLImageElement | null>(null);
+  /** 选中图片的 dataURL（按需从工作区读取，避免打开工作区时读取上万张图） */
+  const [pictureDataUrl, setPictureDataUrl] = useState<string | null>(null);
   const [sizeMismatch, setSizeMismatch] = useState<{
     target: { w: number; h: number };
     mode: 'indexed' | 'rgba';
@@ -73,14 +76,34 @@ export default function Preview() {
     setCompareDims(null);
   }, [selectedPicture?.fileName]);
 
+  // 选中图片后才读取它的数据（大目录下不能预先全量读取）
+  useEffect(() => {
+    if (!selectedPicture || !workspace) {
+      setPictureDataUrl(null);
+      return;
+    }
+    let cancelled = false;
+    setPictureDataUrl(null);
+    readPictureDataUrl(workspace, selectedPicture)
+      .then((url) => {
+        if (!cancelled) setPictureDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setPictureDataUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPicture, workspace]);
+
   // 覆盖写模式：加载目标图片作为参考图（供 \r / \p 取像素）
   useEffect(() => {
-    if (!selectedPicture) {
+    if (!selectedPicture || !pictureDataUrl) {
       setReferenceImage(null);
       return;
     }
     let cancelled = false;
-    loadImage(selectedPicture.dataUrl)
+    loadImage(pictureDataUrl)
       .then((img) => {
         if (!cancelled) setReferenceImage(img);
       })
@@ -90,7 +113,7 @@ export default function Preview() {
     return () => {
       cancelled = true;
     };
-  }, [selectedPicture]);
+  }, [selectedPicture, pictureDataUrl]);
 
   // 实时渲染
   useEffect(() => {
@@ -117,15 +140,15 @@ export default function Preview() {
   // 选中对照图片时，自动采用该图片上的适合颜色作为透明色
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!selectedPicture || !canvas) return;
+    if (!selectedPicture || !pictureDataUrl || !canvas) return;
     let cancelled = false;
-    recommendTransparentColorFromPicture(selectedPicture.dataUrl, canvas).then((c) => {
+    recommendTransparentColorFromPicture(pictureDataUrl, canvas).then((c) => {
       if (!cancelled && c) setTransparentColor(c);
     });
     return () => {
       cancelled = true;
     };
-  }, [selectedPicture]);
+  }, [selectedPicture, pictureDataUrl]);
 
   const { width, height } = useMemo(() => computeWindowSize(config), [config]);
 
@@ -155,7 +178,7 @@ export default function Preview() {
 
     // 替换模式下校验目标图片尺寸是否与当前画面完全一致
     if (selectedPicture && workspace && !force) {
-      const target = compareDims ?? (await loadImageSize(selectedPicture.dataUrl));
+      const target = compareDims ?? (pictureDataUrl ? await loadImageSize(pictureDataUrl) : null);
       if (target && (target.w !== canvas.width || target.h !== canvas.height)) {
         setSizeMismatch({ target, mode });
         return;
@@ -274,9 +297,9 @@ export default function Preview() {
             className="recommend-btn"
             onClick={async () => {
               const canvas = canvasRef.current;
-              if (selectedPicture && canvas) {
+              if (selectedPicture && pictureDataUrl && canvas) {
                 const c = await recommendTransparentColorFromPicture(
-                  selectedPicture.dataUrl,
+                  pictureDataUrl,
                   canvas,
                 );
                 if (c) {
@@ -314,24 +337,28 @@ export default function Preview() {
             目标尺寸：{compareDims ? `${compareDims.w} × ${compareDims.h}` : '…'}
           </div>
           <div className="canvas-wrapper">
-            <img
-              className="compare-img"
-              src={selectedPicture.dataUrl}
-              alt={selectedPicture.fileName}
-              style={
-                compareDims
-                  ? {
-                      width: compareDims.w * displayScale,
-                      height: compareDims.h * displayScale,
-                      imageRendering: 'pixelated',
-                    }
-                  : { imageRendering: 'pixelated' }
-              }
-              onLoad={(e) => {
-                const img = e.currentTarget;
-                setCompareDims({ w: img.naturalWidth, h: img.naturalHeight });
-              }}
-            />
+            {pictureDataUrl ? (
+              <img
+                className="compare-img"
+                src={pictureDataUrl}
+                alt={selectedPicture.fileName}
+                style={
+                  compareDims
+                    ? {
+                        width: compareDims.w * displayScale,
+                        height: compareDims.h * displayScale,
+                        imageRendering: 'pixelated',
+                      }
+                    : { imageRendering: 'pixelated' }
+                }
+                onLoad={(e) => {
+                  const img = e.currentTarget;
+                  setCompareDims({ w: img.naturalWidth, h: img.naturalHeight });
+                }}
+              />
+            ) : (
+              <span className="compare-loading">读取中…</span>
+            )}
           </div>
         </div>
       )}

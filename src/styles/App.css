@@ -1431,6 +1431,13 @@
   image-rendering: pixelated;
 }
 
+.compare-loading {
+  display: inline-block;
+  padding: 8px 12px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
 /* === 替换模式移动端适配 === */
 @media (max-width: 899px) {
   .picture-drawer {

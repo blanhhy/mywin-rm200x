@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { loadImage } from '../../engine/messageWindow';
 import { parsePalette0 } from '../../engine/transparentColorInference';
+import { readPictureDataUrl } from '../../engine/workspace';
 import { type BackgroundMode, type StretchMode, type SystemImageRef } from '../../types';
 import SystemPicker, { type SystemPickerValue } from '../pickers/SystemPicker';
 
@@ -86,12 +87,20 @@ export default function BackgroundTab() {
     if (!fileName) return;
     const pic = useStore.getState().pictures.find((p) => p.fileName === fileName);
     if (!pic) return;
+    const workspace = useStore.getState().workspace;
+    if (!workspace) return;
 
-    const img = await loadImage(pic.dataUrl);
+    let picDataUrl: string;
+    try {
+      picDataUrl = await readPictureDataUrl(workspace, pic);
+    } catch {
+      return;
+    }
+    const img = await loadImage(picDataUrl);
     // 解析调色板 idx-0 作为透明色（PNG / BMP 同一条路径）
     let palette0: string | null = null;
     try {
-      palette0 = parsePalette0(dataUrlToBytes(pic.dataUrl));
+      palette0 = parsePalette0(dataUrlToBytes(picDataUrl));
     } catch {
       // 解析失败，不使用透明色
     }

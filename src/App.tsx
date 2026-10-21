@@ -60,9 +60,11 @@ function WorkspaceSelector() {
       <button
         className="workspace-btn unsupported"
         onClick={() =>
-          alert('当前浏览器不支持文件夹访问，请使用 Chrome/Edge 最新版本')
+          alert(
+            '当前环境不支持选择文件夹。工作区需要在桌面版 Chrome/Edge 中使用；移动端请直接导入素材',
+          )
         }
-        title="当前浏览器不支持文件夹访问"
+        title="当前环境不支持选择文件夹"
       >
         <span className="workspace-icon">📁</span>
         <span className="workspace-name">工作区</span>
@@ -98,6 +100,11 @@ function WorkspaceSelector() {
                   <span className="workspace-label">工作区</span>
                   <span className="workspace-path">{workspace.name}</span>
                 </div>
+                {workspace.mode === 'virtual' && (
+                  <div className="workspace-dir-hint">
+                    虚拟工作区：素材保存在浏览器中，导出时会触发文件下载
+                  </div>
+                )}
                 {recentSection}
               </div>
               <button
@@ -200,7 +207,7 @@ export default function App() {
             className="reset-btn refresh-btn"
             onClick={() => refreshAssets()}
             disabled={!workspace || assetRefreshing}
-            title={workspace ? '重载素材目录（System / Faceset / Picture）' : '打开工作区后可刷新素材目录'}
+            title={workspace ? '重载素材目录（System / FaceSet / Picture）' : '打开工作区后可刷新素材目录'}
           >
             ⟳
           </button>

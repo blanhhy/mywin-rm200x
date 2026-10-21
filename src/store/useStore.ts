@@ -25,6 +25,7 @@ import {
   exportToWorkspace,
   isFileSystemAccessSupported,
   listWorkspacePictures,
+  readPictureDataUrl,
   overwritePictureInWorkspace,
   saveHandle as saveWorkspaceHandle,
   addRecentWorkspace,
@@ -112,7 +113,10 @@ function syncFollowTargetSize(
   set: (partial: (s: StoreState) => Partial<StoreState>) => void,
 ): void {
   if (!get().config.followTargetPicture) return;
-  loadImage(picture.dataUrl)
+  const workspace = get().workspace;
+  if (!workspace) return;
+  readPictureDataUrl(workspace, picture)
+    .then((dataUrl) => loadImage(dataUrl))
     .then((img) => {
       // 加载期间选中项若已变化，丢弃过期结果
       if (get().selectedPicture?.fileName !== picture.fileName) return;
@@ -136,20 +140,21 @@ async function loadRecentsInto(
 /**
  * 接管一个工作区：更新 state、读取素材目录，并把该目录记入最近列表
  * （先设置 workspace，素材读取失败也不至于丢失工作区本身）
+ *
+ * Picture 目录可能上万张图（移动端枚举要十几秒），
+ * 因此不在这里读取，等用户打开图库时再列。
  */
 async function adoptWorkspace(
   ws: WorkspaceInfo,
   set: (partial: (s: StoreState) => Partial<StoreState>) => void,
 ): Promise<void> {
-  set(() => ({ workspace: ws, selectedPicture: null }));
-  const [sysAssets, faceAssets, pictures] = await Promise.all([
+  set(() => ({ workspace: ws, selectedPicture: null, pictures: [] }));
+  const [sysAssets, faceAssets] = await Promise.all([
     listWorkspaceAssets(ws, 'System'),
     listWorkspaceAssets(ws, 'FaceSet'),
-    listWorkspacePictures(ws),
   ]);
   setWorkspaceAssets('System', sysAssets);
   setWorkspaceAssets('FaceSet', faceAssets);
-  set(() => ({ pictures }));
   markAssetsRefreshed();
   if (ws.handle) await addRecentWorkspace(ws.handle);
 }
@@ -278,7 +283,7 @@ export const useStore = create<StoreState>((set, get) => ({
       const ws = await openWorkspace();
       if (ws) await adoptWorkspace(ws, set);
     } catch (e) {
-      set({ workspaceError: String(e) || '打开工作区失败' });
+      set({ workspaceError: e instanceof Error ? e.message : String(e) || '打开工作区失败' });
     } finally {
       set({ workspaceLoading: false });
       await loadRecentsInto(set);
@@ -389,7 +394,12 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  toggleDrawer: () => set((s) => ({ drawerOpen: !s.drawerOpen })),
+  toggleDrawer: () => {
+    const willOpen = !get().drawerOpen;
+    set({ drawerOpen: willOpen });
+    // 图库关闭期间不会读取 Picture 目录，首次打开时才去枚举
+    if (willOpen && get().pictures.length === 0) void get().refreshPictures();
+  },
 
   refreshPictures: async () => {
     const { workspace, selectedPicture } = get();
