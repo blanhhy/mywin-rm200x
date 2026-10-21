@@ -192,6 +192,20 @@ export default function TextTab() {
           />
           <span>绘制阴影</span>
         </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={font.pixelPerfect}
+            disabled={!fontSelected}
+            onChange={(e) =>
+              updateConfig((c) => ({
+                ...c,
+                customFont: { ...c.customFont, pixelPerfect: e.target.checked },
+              }))
+            }
+          />
+          <span>像素完美（像素字体专用）</span>
+        </label>
       </div>
 
       <SystemPicker

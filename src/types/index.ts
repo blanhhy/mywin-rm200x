@@ -106,6 +106,12 @@ export interface CustomFontConfig {
   lineSpacing: number;
   /** 是否绘制阴影 */
   shadow: boolean;
+  /**
+   * 像素完美模式：超采样后按源像素块二值化
+   * 只对"设计网格与画布像素整数对齐"的像素字体有用（如 8px 点阵字体），
+   * 普通轮廓字体请保持关闭，否则抗锯齿边缘会被整块丢弃，导致缺笔画。
+   */
+  pixelPerfect: boolean;
 }
 
 /** 完整的窗口配置 */
@@ -160,6 +166,7 @@ export const DEFAULT_CONFIG: MessageWindowConfig = {
     letterSpacing: 0,
     lineSpacing: 4,
     shadow: true,
+    pixelPerfect: false,
   },
 
   standardWindow: true,
