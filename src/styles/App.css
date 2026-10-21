@@ -890,14 +890,48 @@
 }
 
 /* === 字体选择器 === */
-.font-source-bar {
+.font-add-row {
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
 }
 
-.font-source-bar .upload-btn {
-  flex: 1;
+.font-local-hint {
+  padding: 0 2px;
+  font-size: 11px;
+  color: var(--color-text-dim);
+}
+
+.asset-check {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
   justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 1;
+  color: white;
+  cursor: pointer;
+}
+
+.asset-check:hover {
+  border-color: var(--color-primary);
+}
+
+.asset-check.on {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.asset-item.multi-selected {
+  background: rgba(74, 143, 231, 0.15);
+  border-color: var(--color-primary);
 }
 
 .font-search {
