@@ -196,7 +196,7 @@ export const DEFAULT_CONFIG: MessageWindowConfig = {
   backgroundMode: 'system',
   backgroundSystem: { name: 'System', image: null, transparentColor: '#000000' },
   backgroundImage: null,
-  backgroundImageCornerThickness: 6,
+  backgroundImageCornerThickness: 8,
   backgroundImageEdgeThickness: 6,
   backgroundImageTileRect: null,
   backgroundImageUseTransparentColor: false,

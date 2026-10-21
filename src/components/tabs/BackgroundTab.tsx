@@ -337,7 +337,7 @@ export default function BackgroundTab() {
                   value={config.backgroundImageEdgeThickness}
                   onChange={handleEdgeThickness}
                   min={0}
-                  max={16}
+                  max={8}
                 />
               </label>
             </div>
