@@ -20,16 +20,21 @@ type ParsedLine = ReturnType<typeof parseText>[number];
 const ALPHA_THRESHOLD = 128;
 
 /**
- * 超采样：把字形放大到至少这么多像素再栅格化
+ * 像素完美模式的超采样倍率
  *
- * 小字号下浏览器是按轮廓栅格化并开抗锯齿的（还会跑 TrueType 微调指令），
- * 1 像素宽的缝隙会被填平成实心块——像素字体在 8px 下直接渲染就是这个下场。
- * 放大到 32px 以上再按源像素块取平均，就能把设计网格还原出来。
+ * 8px 这类超小字号下，浏览器会把 1px 宽的缝隙填平（还受 TrueType 微调影响），
+ * 必须放大后按源像素块求平均才能还原设计网格。
+ *
+ * 但 12px 及以上（例如文泉驿点阵 12px：unitsPerEm=1500，正好 12 像素）
+ * 原生字号本身就与设计网格对齐，直接按 1:1 二值化即可还原点阵；
+ * 再放大反而会被逐 ppem 的微调指令挪动轮廓，导致块均值对不齐、缺笔画。
+ * 所以只在字号小于 FONT_HEIGHT(12) 时才超采样。
  */
 const SUPERSAMPLE_MIN = 4;
 const SUPERSAMPLE_TARGET_PX = 32;
 
 function supersampleOf(size: number): number {
+  if (size >= RPG_CONSTANTS.FONT_HEIGHT) return 1;
   return Math.max(SUPERSAMPLE_MIN, Math.ceil(SUPERSAMPLE_TARGET_PX / size));
 }
 
