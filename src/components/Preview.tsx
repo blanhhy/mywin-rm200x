@@ -129,19 +129,9 @@ export default function Preview() {
 
   const { width, height } = useMemo(() => computeWindowSize(config), [config]);
 
-  // 移动端额外应用基础缩放，让标准窗口在 1x 下能完整显示
-  const requestedScale = isMobile ? zoom * MOBILE_BASE_SCALE : zoom;
-  /**
-   * 显示倍率必须取整到"设备像素"
-   *
-   * 预览是把 1:1 的画布用 CSS 放大显示的。如果源像素到设备像素的倍率不是整数
-   * （例如 Windows 175% 缩放 × 2× = 3.5），相邻源像素会分别占 3 或 4 个设备像素，
-   * 1 像素宽的笔画就会忽宽忽窄，看起来像被缩放糊掉了。
-   * 这里先把倍率换成设备像素再取整，最后换算回 CSS 像素，保证整数倍。
-   */
-  const dpr = typeof window !== 'undefined' && window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
-  const deviceScale = Math.max(1, Math.round(requestedScale * dpr));
-  const effectiveZoom = deviceScale / dpr;
+  // 移动端仅在 1× 时缩小一点，让标准 320px 窗口在窄屏上完整显示；
+  // 2× 及以上保持所选倍率精确
+  const displayScale = isMobile && zoom === 1 ? MOBILE_BASE_SCALE : zoom;
 
   // 配色列表（用于展示）
   const colors = useMemo(() => {
@@ -232,11 +222,14 @@ export default function Preview() {
             <option value={2}>2×</option>
             <option value={3}>3×</option>
             <option value={4}>4×</option>
+            <option value={5}>5×</option>
+            <option value={6}>6×</option>
+            <option value={7}>7×</option>
+            <option value={8}>8×</option>
           </select>
         </label>
         <span className="size-info">
           尺寸：{width} × {height}
-          {Math.abs(effectiveZoom - requestedScale) > 0.01 && `（实际显示 ${effectiveZoom.toFixed(2)}×）`}
         </span>
       </div>
 
@@ -246,8 +239,8 @@ export default function Preview() {
           width={width}
           height={height}
           style={{
-            width: width * effectiveZoom,
-            height: height * effectiveZoom,
+            width: width * displayScale,
+            height: height * displayScale,
             imageRendering: 'pixelated',
           }}
         />
@@ -330,8 +323,8 @@ export default function Preview() {
               style={
                 compareDims
                   ? {
-                      width: compareDims.w * effectiveZoom,
-                      height: compareDims.h * effectiveZoom,
+                      width: compareDims.w * displayScale,
+                      height: compareDims.h * displayScale,
                       imageRendering: 'pixelated',
                     }
                   : { imageRendering: 'pixelated' }
