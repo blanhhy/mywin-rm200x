@@ -3,8 +3,10 @@
 .app {
   display: flex;
   flex-direction: column;
-  width: 100vw;
+  width: 100%;
+  /* 100dvh 随移动端浏览器工具栏显隐变化，避免底部被工具栏遮住；旧内核回退 100vh */
   height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
 }
 
@@ -131,6 +133,8 @@
     flex-direction: column;
     gap: 12px;
     overflow: auto;
+    /* 避开手机底部手势条/安全区 */
+    padding-bottom: env(safe-area-inset-bottom);
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
