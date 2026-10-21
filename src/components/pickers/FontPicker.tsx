@@ -112,7 +112,7 @@ export default function FontPicker({ open, onClose, onApply }: FontPickerProps) 
       >
         <div className="asset-list">
           <div className="asset-list-header">
-            <span>已添加字体</span>
+            <span>字体</span>
             <span>{fonts.length}</span>
           </div>
           {fonts.map((f) => (
@@ -133,19 +133,18 @@ export default function FontPicker({ open, onClose, onApply }: FontPickerProps) 
           {fonts.length === 0 && (
             <div className="font-list-empty">
               {localSupported
-                ? '还没有添加字体。点下方「添加本机字体」选择需要的本机字体，或导入字体文件'
-                : '还没有添加字体。点下方「导入字体文件」导入字体'}
+                ? '还没有字体。请导入字体文件或添加本机字体'
+                : '还没有字体。请导入字体文件'}
             </div>
           )}
           <div className="font-add-row">
-            {localSupported && (
-              <button className="asset-add-btn" onClick={() => setLocalOpen(true)}>
-                + 添加本机字体…
-              </button>
-            )}
             <button className="asset-add-btn" onClick={() => fileInputRef.current?.click()}>
               + 导入字体文件…
             </button>
+            {localSupported && (
+            <button className="asset-add-btn" onClick={() => setLocalOpen(true)}>
+              + 添加本机字体…
+            </button>)}
           </div>
           <input
             ref={fileInputRef}
@@ -174,7 +173,7 @@ export default function FontPicker({ open, onClose, onApply }: FontPickerProps) 
               </div>
             </>
           ) : (
-            <div className="font-preview-empty">从左侧选择一个字体，或导入字体文件</div>
+            <div className="font-preview-empty">从左侧选择一个字体</div>
           )}
         </div>
       </Modal>
@@ -268,7 +267,7 @@ function LocalFontPicker({ open, onClose, onAdd }: LocalFontPickerProps) {
   return (
     <Modal
       open={open}
-      title="添加本机字体"
+      title="本机字体"
       onClose={onClose}
       width={560}
       footer={
@@ -294,9 +293,8 @@ function LocalFontPicker({ open, onClose, onAdd }: LocalFontPickerProps) {
           onChange={(e) => setKeyword(e.target.value)}
           autoFocus
         />
-        <div className="font-local-hint">左键预览 · 点复选框或右键多选（可批量添加）</div>
         <div className="asset-list-header">
-          <span>本机字体</span>
+          <span>字体</span>
           <span>{loading ? '…' : filtered.length}</span>
         </div>
         {filtered.map((f) => {

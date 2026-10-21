@@ -213,7 +213,7 @@ export default function TextTab() {
             disabled={!fontSelected}
             onChange={(e) => handlePixelPerfectChange(e.target.checked)}
           />
-          <span>像素完美（像素字体专用）</span>
+          <span>像素完美</span>
         </label>
       </div>
 
