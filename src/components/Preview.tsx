@@ -333,7 +333,7 @@ export default function Preview() {
       {selectedPicture && (
         <div className="compare-section">
           <div className="compare-label">
-            目标图片：{selectedPicture.fileName}<br></br>
+            目标图片：<span className='copyable'>{selectedPicture.fileName}</span><br />
             目标尺寸：{compareDims ? `${compareDims.w} × ${compareDims.h}` : '…'}
           </div>
           <div className="canvas-wrapper">

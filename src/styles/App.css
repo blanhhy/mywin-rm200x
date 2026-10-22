@@ -1657,6 +1657,11 @@
   color: var(--color-text-muted);
 }
 
+.compare-label .copyable {
+  cursor: text;
+  user-select: text;
+}
+
 .compare-warn {
   color: var(--color-warning);
 }
