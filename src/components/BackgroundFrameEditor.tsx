@@ -8,7 +8,7 @@
 //   3. 底纹框：默认吸附在左上角角框的右下角（可跟随角框移动），也可自由平移/缩放
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Modal from './Modal';
-import type { LoadedImage } from '../types';
+import { RPG_CONSTANTS, type LoadedImage } from '../types';
 
 export interface TileRect {
   x: number;
@@ -29,10 +29,6 @@ export interface FrameEditorProps {
 
 /** 默认展示的图素范围（左上角起） */
 const VIEW_PX = 16;
-/** 与渲染层一致：角框边长上限 */
-const MAX_CORNER = 8;
-/** 与渲染层一致：边框厚度上限 */
-const MAX_EDGE = 16;
 /** 底纹默认宽高 */
 const DEFAULT_TILE_SIZE = 2;
 /** 角框手柄尺寸（屏幕像素） */
@@ -40,6 +36,14 @@ const HANDLE_SIZE = 14;
 
 function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
+}
+
+function clampTileSize(rect: TileRect): TileRect {
+  return {
+    ...rect,
+    w: clamp(Math.floor(rect.w), 1, RPG_CONSTANTS.BG_RECT.w),
+    h: clamp(Math.floor(rect.h), 1, RPG_CONSTANTS.BG_RECT.h),
+  };
 }
 
 /** 四角框的定义（位置与拖动方向） */
@@ -73,7 +77,15 @@ export default function BackgroundFrameEditor({
   const [corner, setCorner] = useState(cornerThickness);
   const [edge, setEdge] = useState(edgeThickness);
   const [tile, setTile] = useState<TileRect>(
-    () => tileRect ?? { x: cornerThickness, y: cornerThickness, w: DEFAULT_TILE_SIZE, h: DEFAULT_TILE_SIZE },
+    () =>
+      clampTileSize(
+        tileRect ?? {
+          x: cornerThickness,
+          y: cornerThickness,
+          w: DEFAULT_TILE_SIZE,
+          h: DEFAULT_TILE_SIZE,
+        },
+      ),
   );
   const [baseScale, setBaseScale] = useState(8);
   const [zoomPixels, setZoomPixels] = useState(VIEW_PX);
@@ -86,14 +98,14 @@ export default function BackgroundFrameEditor({
   /** 放大/缩小时保持可视区域的屏幕尺寸接近初始的 16×16 显示 */
   const scale = (baseScale * VIEW_PX) / visiblePixels;
 
-  /** 角框边长上限（与渲染层 clamp 规则一致） */
+  /** 角框边长上限（受图像尺寸和数值输入上限共同约束） */
   const maxCorner = useMemo(
-    () => Math.max(0, Math.min(MAX_CORNER, Math.floor(Math.min(imgW, imgH) / 2))),
+    () => Math.max(0, Math.min(RPG_CONSTANTS.BORDER_THICKNESS, Math.floor(Math.min(imgW, imgH) / 2))),
     [imgW, imgH],
   );
   /** 边框厚度上限 */
   const maxEdge = useMemo(
-    () => Math.max(0, Math.min(MAX_EDGE, imgW, imgH)),
+    () => Math.max(0, Math.min(RPG_CONSTANTS.BORDER_THICKNESS, imgW, imgH)),
     [imgW, imgH],
   );
 
@@ -103,12 +115,14 @@ export default function BackgroundFrameEditor({
     setCorner(cornerThickness);
     setEdge(edgeThickness);
     setTile(
-      tileRect ?? {
-        x: cornerThickness,
-        y: cornerThickness,
-        w: DEFAULT_TILE_SIZE,
-        h: DEFAULT_TILE_SIZE,
-      },
+      clampTileSize(
+        tileRect ?? {
+          x: cornerThickness,
+          y: cornerThickness,
+          w: DEFAULT_TILE_SIZE,
+          h: DEFAULT_TILE_SIZE,
+        },
+      ),
     );
   }, [open, cornerThickness, edgeThickness, tileRect]);
 
@@ -386,8 +400,16 @@ export default function BackgroundFrameEditor({
                     beginDrag(e, (dx, dy) => {
                       setTile({
                         ...start,
-                        w: clamp(Math.round(start.w + dx), 1, Math.max(1, imgW - start.x)),
-                        h: clamp(Math.round(start.h + dy), 1, Math.max(1, imgH - start.y)),
+                        w: clamp(
+                          Math.round(start.w + dx),
+                          1,
+                          Math.min(RPG_CONSTANTS.BG_RECT.w, Math.max(1, imgW - start.x)),
+                        ),
+                        h: clamp(
+                          Math.round(start.h + dy),
+                          1,
+                          Math.min(RPG_CONSTANTS.BG_RECT.h, Math.max(1, imgH - start.y)),
+                        ),
                       });
                     });
                   }}

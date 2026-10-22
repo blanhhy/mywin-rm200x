@@ -3,7 +3,12 @@ import { useStore } from '../../store/useStore';
 import { loadImage } from '../../engine/messageWindow';
 import { parsePalette0 } from '../../engine/transparentColorInference';
 import { readPictureDataUrl } from '../../engine/workspace';
-import { type BackgroundMode, type StretchMode, type SystemImageRef } from '../../types';
+import {
+  RPG_CONSTANTS,
+  type BackgroundMode,
+  type StretchMode,
+  type SystemImageRef,
+} from '../../types';
 import SystemPicker, { type SystemPickerValue } from '../pickers/SystemPicker';
 import BackgroundFrameEditor, { type TileRect } from '../BackgroundFrameEditor';
 
@@ -123,11 +128,11 @@ export default function BackgroundTab() {
     applyReferenceImage(img, palette0);
   };
 
-  /** 角框边长（≤8）；底纹框若吸附在左上角角框上则跟着移动 */
+  /** 角框边长；底纹框若吸附在左上角角框上则跟着移动 */
   const handleCornerThickness = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = Number(e.target.value);
     if (Number.isNaN(v)) return;
-    const next = Math.max(0, Math.min(8, Math.floor(v)));
+    const next = Math.max(0, Math.min(RPG_CONSTANTS.BORDER_THICKNESS, Math.floor(v)));
     updateConfig((c) => {
       const prev = c.backgroundImageCornerThickness;
       const current = c.backgroundImageTileRect;
@@ -144,13 +149,16 @@ export default function BackgroundTab() {
     });
   };
 
-  /** 边框厚度（≤16，四边同步） */
+  /** 边框厚度（四边同步） */
   const handleEdgeThickness = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = Number(e.target.value);
     if (Number.isNaN(v)) return;
     updateConfig((c) => ({
       ...c,
-      backgroundImageEdgeThickness: Math.max(0, Math.min(16, Math.floor(v))),
+      backgroundImageEdgeThickness: Math.max(
+        0,
+        Math.min(RPG_CONSTANTS.BORDER_THICKNESS, Math.floor(v)),
+      ),
     }));
   };
 
@@ -159,6 +167,12 @@ export default function BackgroundTab() {
     value: number,
   ) => {
     if (Number.isNaN(value)) return;
+    const normalizedValue = Math.floor(value);
+    const tileSizeLimit =
+      key === 'w' ? RPG_CONSTANTS.BG_RECT.w : RPG_CONSTANTS.BG_RECT.h;
+    const nextValue = key === 'x' || key === 'y'
+      ? Math.max(0, normalizedValue)
+      : Math.max(1, Math.min(tileSizeLimit, normalizedValue));
     updateConfig((c) => ({
       ...c,
       backgroundImageTileRect: {
@@ -166,7 +180,7 @@ export default function BackgroundTab() {
         y: c.backgroundImageTileRect?.y ?? c.backgroundImageCornerThickness,
         w: c.backgroundImageTileRect?.w ?? 2,
         h: c.backgroundImageTileRect?.h ?? 2,
-        [key]: Math.max(1, Math.floor(value)),
+        [key]: nextValue,
       },
     }));
   };
@@ -326,7 +340,7 @@ export default function BackgroundTab() {
                   value={config.backgroundImageCornerThickness}
                   onChange={handleCornerThickness}
                   min={0}
-                  max={8}
+                  max={RPG_CONSTANTS.BORDER_THICKNESS}
                 />
               </label>
               <label>
@@ -337,7 +351,7 @@ export default function BackgroundTab() {
                   value={config.backgroundImageEdgeThickness}
                   onChange={handleEdgeThickness}
                   min={0}
-                  max={8}
+                  max={RPG_CONSTANTS.BORDER_THICKNESS}
                 />
               </label>
             </div>
@@ -376,6 +390,7 @@ export default function BackgroundTab() {
                   value={config.backgroundImageTileRect?.w ?? 2}
                   onChange={(e) => handleTileRectChange('w', Number(e.target.value))}
                   min={1}
+                  max={RPG_CONSTANTS.BG_RECT.w}
                 />
               </label>
               <label>
@@ -386,6 +401,7 @@ export default function BackgroundTab() {
                   value={config.backgroundImageTileRect?.h ?? 2}
                   onChange={(e) => handleTileRectChange('h', Number(e.target.value))}
                   min={1}
+                  max={RPG_CONSTANTS.BG_RECT.h}
                 />
               </label>
             </div>

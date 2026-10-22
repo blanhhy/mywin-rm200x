@@ -238,11 +238,6 @@ export class SystemImageRenderer {
   }
 }
 
-/** 推断图片：角框边长上限 */
-const MAX_CORNER_THICKNESS = 8;
-/** 推断图片：边框厚度上限（参考 RPG Maker 200x System 图边框区域尺寸） */
-const MAX_EDGE_THICKNESS = 16;
-
 /**
  * 推断式背景渲染器：根据一张完整窗口图片推断边框与底纹
  * 用于"根据图片推断"模式（翻译需求场景）
@@ -284,12 +279,15 @@ export class InferredImageRenderer {
     const half = Math.floor(Math.min(sw, sh) / 2);
     this.cornerThickness = Math.max(
       0,
-      Math.min(cornerThickness, MAX_CORNER_THICKNESS, half),
+      Math.min(cornerThickness, RPG_CONSTANTS.BORDER_THICKNESS, half),
     );
     // 角框会占用两端的空间，剩余部分才是可用的边条长度
     const maxEdge = Math.max(
       0,
-      Math.min(MAX_EDGE_THICKNESS, Math.min(sw, sh) - this.cornerThickness * 2),
+      Math.min(
+        RPG_CONSTANTS.BORDER_THICKNESS,
+        Math.min(sw, sh) - this.cornerThickness * 2,
+      ),
     );
     this.edgeThickness = Math.max(0, Math.min(edgeThickness, maxEdge));
     this.tileRect = tileRect;
@@ -512,4 +510,3 @@ export function getSystemImageRenderer(
   }
   return renderer;
 }
-
