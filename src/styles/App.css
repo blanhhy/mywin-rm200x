@@ -1066,12 +1066,21 @@
 }
 
 .modal-btn.danger {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.modal-btn.danger:hover {
+  background: var(--color-danger-dim);
+}
+
+.modal-btn.primary.danger {
   background: var(--color-danger-dim);
   border-color: var(--color-danger-dim);
   color: white;
 }
 
-.modal-btn.danger:hover {
+.modal-btn.primary.danger:hover {
   background: var(--color-danger);
 }
 

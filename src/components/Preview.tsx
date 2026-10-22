@@ -172,12 +172,16 @@ export default function Preview() {
   const targetIsBmp = !!selectedPicture && /\.bmp$/i.test(selectedPicture.fileName);
 
   // 实际执行保存（8 位索引色或 RGBA）
-  const doSave = async (mode: 'indexed' | 'rgba', force = false) => {
+  const doSave = async (
+    mode: 'indexed' | 'rgba',
+    force = false,
+    partialTarget?: { w: number; h: number },
+  ) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     // 替换模式下校验目标图片尺寸是否与当前画面完全一致
-    if (selectedPicture && workspace && !force) {
+    if (selectedPicture && workspace && !force && !partialTarget) {
       const target = compareDims ?? (pictureDataUrl ? await loadImageSize(pictureDataUrl) : null);
       if (target && (target.w !== canvas.width || target.h !== canvas.height)) {
         setSizeMismatch({ target, mode });
@@ -186,14 +190,31 @@ export default function Preview() {
     }
 
     try {
+      let saveCanvas = canvas;
+      if (partialTarget) {
+        const targetImage = pictureDataUrl ? await loadImage(pictureDataUrl) : null;
+        if (!targetImage) throw new Error('无法读取目标图片');
+
+        const composite = document.createElement('canvas');
+        composite.width = partialTarget.w;
+        composite.height = partialTarget.h;
+        const ctx = composite.getContext('2d');
+        if (!ctx) throw new Error('无法创建部分覆盖画布');
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(targetImage, 0, 0);
+        // 左上角对齐、按原始像素尺寸叠加；目标画布边界会裁掉超出的部分。
+        ctx.drawImage(canvas, 0, 0);
+        saveCanvas = composite;
+      }
+
       let fileData: Uint8Array;
       if (targetIsBmp) {
         // BMP 无 alpha 通道，只能用调色板 idx-0 表达透明，故固定写入索引色 BMP
-        fileData = canvasTo8bitBMP(canvas, { transparentColor });
+        fileData = canvasTo8bitBMP(saveCanvas, { transparentColor });
       } else if (mode === 'rgba') {
-        fileData = await canvasToRGBAPNG(canvas);
+        fileData = await canvasToRGBAPNG(saveCanvas);
       } else {
-        fileData = await canvasTo8bitPNG(canvas, { transparentColor });
+        fileData = await canvasTo8bitPNG(saveCanvas, { transparentColor });
       }
       const filename = `mywin-${Date.now()}.png`;
       if (workspace) {
@@ -424,9 +445,6 @@ export default function Preview() {
         width={440}
         footer={
           <>
-            <button className="modal-btn" onClick={() => setSizeMismatch(null)}>
-              返回调整
-            </button>
             <button
               className="modal-btn danger"
               onClick={() => {
@@ -436,6 +454,20 @@ export default function Preview() {
               }}
             >
               仍然覆盖
+            </button>
+            <button
+              className="modal-btn danger"
+              onClick={() => {
+                const mismatch = sizeMismatch;
+                if (!mismatch) return;
+                setSizeMismatch(null);
+                doSave(mismatch.mode, false, mismatch.target);
+              }}
+            >
+              部分覆盖
+            </button>
+            <button className="modal-btn primary" onClick={() => setSizeMismatch(null)}>
+              返回调整
             </button>
           </>
         }
@@ -451,8 +483,9 @@ export default function Preview() {
               {width} × {height}
             </strong>
             ，两者不一致。<br />
-            覆盖后游戏中的显示尺寸将随之改变，建议调整窗口尺寸后再保存。
           </p>
+          <p><strong>仍然覆盖</strong>：直接替换为当前图片，导致尺寸变化</p>
+          <p><strong>部分覆盖</strong>：保留原图尺寸，但会将两张图片叠加</p>
         </div>
       </Modal>
     </div>
