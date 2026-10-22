@@ -1,6 +1,6 @@
 // 背景边框/底纹可视化框选
 //
-// 固定展示参照图左上角 16×16 图素（图片更大时出现滚动条），叠加三类选框：
+// 默认展示参照图左上角 16×16 图素（图片更大时出现滚动条），叠加三类选框：
 //   1. 角框：四角各一个，固定在图片四角，只能拖对角手柄，必须是正方形，
 //      四个角边长同步变化，上限 8
 //   2. 边框：固定在图片四边，固定边的长度随角框边长变化（角框缩小 → 边伸长），
@@ -27,7 +27,7 @@ export interface FrameEditorProps {
   onApply: (cornerThickness: number, edgeThickness: number, tileRect: TileRect) => void;
 }
 
-/** 固定展示的图素范围（左上角起） */
+/** 默认展示的图素范围（左上角起） */
 const VIEW_PX = 16;
 /** 与渲染层一致：角框边长上限 */
 const MAX_CORNER = 8;
@@ -75,9 +75,16 @@ export default function BackgroundFrameEditor({
   const [tile, setTile] = useState<TileRect>(
     () => tileRect ?? { x: cornerThickness, y: cornerThickness, w: DEFAULT_TILE_SIZE, h: DEFAULT_TILE_SIZE },
   );
-  const [scale, setScale] = useState(8);
+  const [baseScale, setBaseScale] = useState(8);
+  const [zoomPixels, setZoomPixels] = useState(VIEW_PX);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+
+  /** 可视范围最大为图像短边；小于默认范围时不提供缩放 */
+  const maxZoomPixels = Math.max(VIEW_PX, Math.min(imgW, imgH));
+  const visiblePixels = clamp(zoomPixels, VIEW_PX, maxZoomPixels);
+  /** 放大/缩小时保持可视区域的屏幕尺寸接近初始的 16×16 显示 */
+  const scale = (baseScale * VIEW_PX) / visiblePixels;
 
   /** 角框边长上限（与渲染层 clamp 规则一致） */
   const maxCorner = useMemo(
@@ -105,13 +112,37 @@ export default function BackgroundFrameEditor({
     );
   }, [open, cornerThickness, edgeThickness, tileRect]);
 
+  // 每次打开或切换参考图时从默认的 16×16 范围开始
+  useEffect(() => {
+    if (open) setZoomPixels(VIEW_PX);
+  }, [open, imgW, imgH]);
+
+  // 使用非 passive 监听，确保滚轮缩放时不触发视口或外层容器的滚动
+  useEffect(() => {
+    if (!open || maxZoomPixels <= VIEW_PX) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const deltaY = e.deltaY;
+      setZoomPixels((current) =>
+        clamp(current * Math.pow(1.1, deltaY / 100), VIEW_PX, maxZoomPixels),
+      );
+    };
+
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    return () => viewport.removeEventListener('wheel', handleWheel);
+  }, [open, maxZoomPixels]);
+
   // 计算缩放并滚回左上角
   useEffect(() => {
     if (!open || imgW <= 0 || imgH <= 0) return;
     const compute = () => {
       const maxW = Math.min(640, window.innerWidth - 120);
       const maxH = Math.max(180, window.innerHeight - 320);
-      setScale(clamp(Math.floor(Math.min(maxW, maxH) / VIEW_PX), 4, 28));
+      setBaseScale(clamp(Math.floor(Math.min(maxW, maxH) / VIEW_PX), 4, 28));
     };
     compute();
     window.addEventListener('resize', compute);
@@ -196,9 +227,9 @@ export default function BackgroundFrameEditor({
 
   const stageW = imgW * scale;
   const stageH = imgH * scale;
-  // 需要滚动时预留滚动条宽度，保证 16×16 图素完整可见
-  const viewW = Math.min(VIEW_PX, imgW) * scale + (imgW > VIEW_PX ? 15 : 0);
-  const viewH = Math.min(VIEW_PX, imgH) * scale + (imgH > VIEW_PX ? 15 : 0);
+  // 需要滚动时预留滚动条宽度，保证当前可视范围完整可见
+  const viewW = Math.min(visiblePixels, imgW) * scale + (imgH > visiblePixels ? 15 : 0);
+  const viewH = Math.min(visiblePixels, imgH) * scale + (imgW > visiblePixels ? 15 : 0);
 
   /** 四角框的屏幕位置 */
   const cornerBoxes = CORNERS.map((c) => ({
@@ -387,6 +418,27 @@ export default function BackgroundFrameEditor({
             </div>
           </div>
           <div className="frame-editor-side">
+            <div className="frame-editor-zoom">
+              <label htmlFor="frame-editor-zoom-range">
+                可视范围 <b>{Math.round(visiblePixels)}×{Math.round(visiblePixels)}px</b>
+              </label>
+              <input
+                id="frame-editor-zoom-range"
+                type="range"
+                min={VIEW_PX}
+                max={maxZoomPixels}
+                step={1}
+                value={visiblePixels}
+                disabled={maxZoomPixels <= VIEW_PX}
+                onChange={(e) => setZoomPixels(Number(e.currentTarget.value))}
+                aria-label="可视范围缩放"
+              />
+              <div className="frame-editor-zoom-limits">
+                <span>{VIEW_PX}×{VIEW_PX}</span>
+                <span>{maxZoomPixels}×{maxZoomPixels}</span>
+              </div>
+              <span className="frame-editor-zoom-hint">拖动滑块或滚动鼠标滚轮缩放</span>
+            </div>
             <div className="frame-editor-info">
               <div>
                 角框：<b>{corner}px</b>

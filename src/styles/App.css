@@ -808,6 +808,38 @@
   line-height: 1.6;
 }
 
+.frame-editor-zoom {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.4;
+}
+
+.frame-editor-zoom label,
+.frame-editor-zoom-limits {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.frame-editor-zoom b {
+  color: var(--color-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.frame-editor-zoom input[type="range"] {
+  width: 100%;
+  margin: 2px 0;
+  accent-color: var(--color-primary);
+}
+
+.frame-editor-zoom-limits,
+.frame-editor-zoom-hint {
+  font-size: 10px;
+}
+
 .frame-editor-info b {
   color: var(--color-text);
   font-weight: 600;
