@@ -93,6 +93,12 @@ function PictureThumb({
   const [src, setSrc] = useState<string | null>(entry.dataUrl ?? null);
   const imgRef = useRef<HTMLImageElement>(null);
 
+  // 刷新列表（含覆盖图片后的刷新）会产生新的 entry 对象：
+  // 丢弃旧缩略图，按新内容重新读取，否则图中显示的仍是覆盖前的像素
+  useEffect(() => {
+    setSrc(entry.dataUrl ?? null);
+  }, [entry]);
+
   useEffect(() => {
     if (src) return;
     let cancelled = false;
