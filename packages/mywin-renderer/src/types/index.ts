@@ -212,12 +212,3 @@ export const DEFAULT_CONFIG: MessageWindowConfig = {
 
   colorSystem: { name: 'System', image: null, transparentColor: '#000000' },
 };
-
-/** RTP 素材目录中的一项 */
-export interface AssetEntry {
-  name: string;
-  /** 相对 assets/ 的路径，如 "RTP/System/System.png" */
-  path: string;
-  /** URL，可直接用于 img.src */
-  url: string;
-}

@@ -44,3 +44,13 @@ export {
   isExFontLoaded,
   loadExFont,
 } from './engine/exfont.js';
+export {
+  detectImageFormat,
+  inferTransparentColor,
+  inferTransparentColorFromBuffer,
+  parseBMPPalette0,
+  parsePNGPalette0,
+  parsePalette0,
+  type ImageFormat,
+  type InferOptions,
+} from './engine/transparentColorInference.js';
