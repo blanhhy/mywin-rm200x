@@ -1,4 +1,4 @@
-// Shinonome Gothic 位图字体（自动生成，请勿编辑）
+// Shinonome Gothic 位图字体（自动生成，请勿编辑；渲染包数据）
 // 来源：EasyRPG Player src/generated/shinonome_gothic.h
 // 字形数量：7509
 // 格式：codes[i] = code | (is_full ? 0x10000 : 0)

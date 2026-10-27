@@ -8,9 +8,9 @@
 //   ttyp0 → Shinonome Gothic → WQY → 替换字符
 //   Shinonome Gothic → Baekmuk → WQY → 替换字符
 
-import { RPG_CONSTANTS, DEFAULT_TEXT_RGB } from '../types';
-import { BITMAP_FONTS, type BitmapFontData } from './bitmap-fonts';
-import { isExFontCode, getExFontGlyphData, EXFONT_BASE } from './exfont';
+import { RPG_CONSTANTS, DEFAULT_TEXT_RGB } from '../types/index.js';
+import { BITMAP_FONTS, type BitmapFontData } from './bitmap-fonts/index.js';
+import { isExFontCode, getExFontGlyphData, EXFONT_BASE } from './exfont.js';
 
 /** 位图字体标识符 */
 export type BitmapFontId =

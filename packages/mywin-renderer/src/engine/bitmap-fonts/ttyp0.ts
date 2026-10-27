@@ -1,4 +1,4 @@
-// ttyp0 位图字体（自动生成，请勿编辑）
+// ttyp0 位图字体（自动生成，请勿编辑；渲染包数据）
 // 来源：EasyRPG Player src/generated/bitmapfont_ttyp0.h
 // 字形数量：2899
 // 格式：codes[i] = code | (is_full ? 0x10000 : 0)

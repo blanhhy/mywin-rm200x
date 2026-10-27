@@ -8,7 +8,6 @@
 //
 // 参考：EasyRPG Player src/utils.cpp:412-465 (ExFontNext)、src/font.cpp:202-210 (ExFont)
 
-const EXFONT_URL = './exfont.png';
 const EXFONT_COLS = 13;
 const EXFONT_ROWS = 4;
 const GLYPH_SIZE = 12; // 每个字形 12×12 像素
@@ -23,26 +22,42 @@ export const EXFONT_BASE = 0xf000;
 export const EXFONT_COUNT = 52;
 
 /** 加载 exfont.png 到内部 canvas */
-export async function loadExFont(): Promise<void> {
+export async function loadExFont(source: string | CanvasImageSource): Promise<void> {
   if (exfontCanvas) return;
   if (loadingPromise) return loadingPromise;
 
-  loadingPromise = new Promise<void>((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      exfontCanvas = document.createElement('canvas');
-      exfontCanvas.width = EXFONT_COLS * GLYPH_SIZE; // 156
-      exfontCanvas.height = EXFONT_ROWS * GLYPH_SIZE; // 48
-      exfontCtx = exfontCanvas.getContext('2d', { willReadFrequently: true })!;
-      exfontCtx.imageSmoothingEnabled = false;
-      exfontCtx.drawImage(img, 0, 0);
-      resolve();
+  const attempt = new Promise<void>((resolve, reject) => {
+    const finishLoading = (img: CanvasImageSource) => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = EXFONT_COLS * GLYPH_SIZE; // 156
+        canvas.height = EXFONT_ROWS * GLYPH_SIZE; // 48
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) throw new Error('无法获取 ExFont 2D 上下文');
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, 0, 0);
+        exfontCanvas = canvas;
+        exfontCtx = ctx;
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
     };
-    img.onerror = () => reject(new Error('exfont.png 加载失败'));
-    img.src = EXFONT_URL;
+    if (typeof source === 'string') {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => finishLoading(img);
+      img.onerror = () => reject(new Error('ExFont 图片加载失败'));
+      img.src = source;
+    } else {
+      finishLoading(source);
+    }
   });
 
+  loadingPromise = attempt.catch((error: unknown) => {
+    loadingPromise = null;
+    throw error;
+  });
   return loadingPromise;
 }
 
@@ -95,9 +110,3 @@ export function getExFontGlyphData(code: number): Uint16Array | null {
   return data;
 }
 
-// 模块加载时自动拉取 exfont.png（静默失败，不影响主流程）
-if (typeof document !== 'undefined') {
-  loadExFont().catch(() => {
-    // exfont 加载失败时，$ 转义符会回退到替换字符
-  });
-}

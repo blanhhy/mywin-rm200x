@@ -10,12 +10,12 @@ export interface BitmapFontData {
   count: number;
 }
 
-import { rmg2000Codes, rmg2000Pixels, rmg2000GlyphCount } from './rmg2000';
-import { ttyp0Codes, ttyp0Pixels, ttyp0GlyphCount } from './ttyp0';
-import { shinonomeGothicCodes, shinonomeGothicPixels, shinonomeGothicGlyphCount } from './shinonomeGothic';
-import { shinonomeMinchoCodes, shinonomeMinchoPixels, shinonomeMinchoGlyphCount } from './shinonomeMincho';
-import { wqyCodes, wqyPixels, wqyGlyphCount } from './wqy';
-import { baekmukCodes, baekmukPixels, baekmukGlyphCount } from './baekmuk';
+import { rmg2000Codes, rmg2000Pixels, rmg2000GlyphCount } from './rmg2000.js';
+import { ttyp0Codes, ttyp0Pixels, ttyp0GlyphCount } from './ttyp0.js';
+import { shinonomeGothicCodes, shinonomeGothicPixels, shinonomeGothicGlyphCount } from './shinonomeGothic.js';
+import { shinonomeMinchoCodes, shinonomeMinchoPixels, shinonomeMinchoGlyphCount } from './shinonomeMincho.js';
+import { wqyCodes, wqyPixels, wqyGlyphCount } from './wqy.js';
+import { baekmukCodes, baekmukPixels, baekmukGlyphCount } from './baekmuk.js';
 
 export const BITMAP_FONTS: Record<string, BitmapFontData> = {
   rmg2000: { name: 'rmg2000', displayName: 'RMG2000', codes: rmg2000Codes, pixels: rmg2000Pixels, count: rmg2000GlyphCount },

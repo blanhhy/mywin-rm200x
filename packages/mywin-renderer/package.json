@@ -1,0 +1,18 @@
+{
+  "name": "@mywin/rm200x-renderer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser-side RPG Maker 2000/2003 message window renderer",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "files": ["src"],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}
