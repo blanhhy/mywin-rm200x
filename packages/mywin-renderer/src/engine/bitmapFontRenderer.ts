@@ -370,6 +370,8 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
 //
 // 支持 RPG Maker 2000/2003 全部消息控制字符：
 //   \c[n] / \C[n]  颜色（n=0..19，>19 回到 0，空 [] 等价 \c[0]）
+//                   参数可以是 \v[n] 等运行时变量（如 \c[\v[2]]），
+//                   此时颜色静态不可知，保持当前颜色
 //                   取不到 System 配色（或字号非 12px）时回退白色
 //   \c[RRGGBB]      mywin 扩展：6 位 16 进制颜色（可带 #），直接用该颜色绘制
 //   \s[n] / \S[n]  文字速度        → 丢弃（静态展示无意义）
@@ -415,6 +417,52 @@ export interface FillRegion {
   h: number;
 }
 
+/**
+ * 扫描 \x[...] 的参数区（bracketIndex 指向左方括号）
+ *
+ * 与 EasyRPG Game_Message::ParseParam（game_message.cpp:188）一致：
+ *   - 参数内可嵌套 \v[n]（含 \v[\v[m]] 多层嵌套），其值运行时才知道
+ *   - 遇到非数字即停止数值解析，但仍吞到与之匹配的右方括号
+ *   - 没有右方括号时一直吞到行尾
+ *
+ * 这里只关心"参数原文"和"是否含运行时变量"，具体取值交给调用方判断。
+ */
+function scanParam(
+  rawLine: string,
+  bracketIndex: number,
+): { end: number; raw: string; runtime: boolean } {
+  let i = bracketIndex + 1;
+  let runtime = false;
+  let stop = false;
+  while (i < rawLine.length && rawLine[i] !== ']') {
+    const c = rawLine[i];
+    if (stop) {
+      i++;
+      continue;
+    }
+    if (c >= '0' && c <= '9') {
+      i++;
+      continue;
+    }
+    // 嵌套变量：\v[...] 内部可能还有 \v[...]，递归跳过
+    if (c === '\\' && (rawLine[i + 1] === 'v' || rawLine[i + 1] === 'V')) {
+      let nestedEnd = i + 2;
+      if (rawLine[nestedEnd] === '[') {
+        nestedEnd = scanParam(rawLine, nestedEnd).end;
+      }
+      runtime = true;
+      i = nestedEnd;
+      continue;
+    }
+    stop = true;
+  }
+  return {
+    end: i < rawLine.length ? i + 1 : i,
+    raw: rawLine.slice(bracketIndex + 1, i),
+    runtime,
+  };
+}
+
 export function parseText(text: string): ParsedLine[] {
   const lines: ParsedLine[] = [];
   const rawLines = text.split('\n');
@@ -444,41 +492,46 @@ export function parseText(text: string): ParsedLine[] {
       }
       if (ch === '\\') {
         const next = rawLine[i + 1];
-        // 带参数的控制字符：\x[n]
+        // 带参数的控制字符：\x[...]
         if (next && 'cCsSnNvV'.indexOf(next) !== -1) {
           if (rawLine[i + 2] === '[') {
-            const closeIdx = rawLine.indexOf(']', i + 3);
-            if (closeIdx !== -1) {
-              // \c[n] 需要解析颜色
-              if (next === 'c' || next === 'C') {
-                const param = rawLine.slice(i + 3, closeIdx).trim();
-                const hex = /^#?([0-9a-fA-F]{6})$/.exec(param);
-                const num = param === '' ? 0 : parseInt(param, 10);
-                if (buf) {
-                  segments.push({ text: buf, color: currentColor, rgb: currentRGB });
-                  buf = '';
-                }
+            // 逐字符扫描到匹配的 ]，允许参数内嵌套 \v[...]（如 \c[\v[2]]）
+            const param = scanParam(rawLine, i + 2);
+            const codeEnd = param.end;
+            // \c[n] 需要解析颜色
+            if (next === 'c' || next === 'C') {
+              if (buf) {
+                segments.push({ text: buf, color: currentColor, rgb: currentRGB });
+                buf = '';
+              }
+              // 参数含 \v[...]：颜色索引运行时才确定，静态预览无法求值 → 保持原色
+              if (!param.runtime) {
+                const raw = param.raw.trim();
+                const hex = /^#?([0-9a-fA-F]{6})$/.exec(raw);
                 if (hex) {
                   // mywin 扩展：6 位 16 进制颜色，直接用该颜色绘制文字
                   currentRGB = parseInt(hex[1], 16);
                   currentColor = 0;
                 } else {
+                  // 与 RPG_RT 一致：只读取开头的十进制数字，读不到即 0
+                  const digits = /^\d+/.exec(raw);
+                  const num = digits ? parseInt(digits[0], 10) : 0;
                   currentRGB = undefined;
-                  currentColor = Number.isNaN(num) || num > 19 ? 0 : num;
+                  currentColor = num > 19 ? 0 : num;
                 }
-                i = closeIdx + 1;
-                continue;
               }
-              // \s[n] 丢弃（纯速度参数，静态展示无意义）
-              if (next === 's' || next === 'S') {
-                i = closeIdx + 1;
-                continue;
-              }
-              // \n[n] \v[n] 保留原始代码（运行时才有内容）
-              buf += rawLine.slice(i, closeIdx + 1);
-              i = closeIdx + 1;
+              i = codeEnd;
               continue;
             }
+            // \s[n] 丢弃（纯速度参数，静态展示无意义）
+            if (next === 's' || next === 'S') {
+              i = codeEnd;
+              continue;
+            }
+            // \n[n] \v[n] 保留原始代码（运行时才有内容）
+            buf += rawLine.slice(i, codeEnd);
+            i = codeEnd;
+            continue;
           }
           // 不带 [ 的 \c 退化为颜色 0；其他不带 [ 的控制字符视为普通文本
           if (next === 'c' || next === 'C') {

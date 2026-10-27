@@ -196,6 +196,9 @@ Canvas 实现建议：用 `createPattern` 后通过 `translate(8, 0)` / `transla
 - 语法：`\c[N]`，N 为十进制数字序列
 - **N 范围**：0..19 有效；**N > 19 → 回到 0**（不是取模）
 - `\c[]`（空括号）→ 等价 `\c[0]`
+- 参数支持嵌套变量：`\c[\v[2]]` 这类写法中，`\v[2]` 按 `ParseParam` 递归解析
+  （`game_message.cpp:241-275`），整个代码作为一个控制符被吞掉，不会残留 `]`
+- **静态预览**无法得知变量值：参数含 `\v[N]` 时颜色保持原色（不改变 `text_color`）
 - 不带 `[`（如 `\c5`）→ 退化为颜色 0
 - Maniac 扩展：`\c[x,y]` → `text_color = y * 10 + x`（突破 20 色限制）
 
@@ -272,7 +275,8 @@ EasyRPG 默认字体（`font.cpp:632-659`）：
 - 像素化效果：`ctx.imageSmoothingEnabled = false`，字体大小固定 12px
 - 阴影：先在 `(x+1, y+1)` 用阴影色绘制一遍，再在 `(x, y)` 用主色绘制
 - 全角/半角宽度：通过 `ctx.measureText` 测量，或按字符 Unicode 范围判断（CJK → 12px，ASCII → 6px）
-- 控制符解析：用正则 `/\\c\[(\d*)\]/gi` 提取，分段渲染
+- 控制符解析：按 `Game_Message::ParseParam`（`game_message.cpp:188`）逐字符扫描到匹配的 `]`，
+  支持参数内嵌套 `\v[N]`（如 `\c[\v[2]]`），不能用正则 `\\c\[(\d*)\]` 提取
 
 ---
 
