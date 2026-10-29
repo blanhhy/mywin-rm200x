@@ -258,7 +258,9 @@ export default function App() {
         <span>·</span>
         <span>背景：{config.backgroundMode}</span>
         <span>·</span>
-        <span>脸图：{config.faceMode}</span>
+        <span>
+          脸图：{config.faceLeft.enabled ? '左' : config.faceRight.enabled ? '右' : '无'}
+        </span>
       </footer>
     </div>
   );

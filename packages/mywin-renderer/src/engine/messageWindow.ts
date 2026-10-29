@@ -5,6 +5,7 @@ import {
   RPG_CONSTANTS,
   type MessageWindowConfig,
   type LoadedImage,
+  type FaceSlot,
 } from '../types/index.js';
 import { SystemImageRenderer, InferredImageRenderer, getSystemImageRenderer, type WindowRenderer } from './systemImage.js';
 import { renderBitmapText, measureBitmapTextBounds, type BitmapFontId, type FillRegion, type TextColorSource } from './bitmapFontRenderer.js';
@@ -43,12 +44,14 @@ export function computeWindowSize(
   const textBounds = config.customFont.family
     ? measureCustomFontTextBounds(config.text, config.customFont)
     : measureBitmapTextBounds(config.text, resolveDefaultFontId(options.defaultBitmapFontId));
-  const hasFaceSpace = config.faceMode === 'face';
-  const faceWidth = hasFaceSpace
-    ? config.facePosition === 'left'
+  // 左右脸图各自占用的宽度（右侧只有脸图 + 左间距，文字从 0 开始）
+  const faceWidth =
+    (config.faceLeft.enabled
       ? RPG_CONSTANTS.FACE_LEFT_MARGIN + RPG_CONSTANTS.FACE_SIZE + RPG_CONSTANTS.FACE_RIGHT_MARGIN
-      : RPG_CONSTANTS.FACE_SIZE + RPG_CONSTANTS.FACE_LEFT_MARGIN
-    : 0;
+      : 0) +
+    (config.faceRight.enabled
+      ? RPG_CONSTANTS.FACE_SIZE + RPG_CONSTANTS.FACE_LEFT_MARGIN
+      : 0);
 
   const padding = config.standardWindow
     ? { top: 8, right: 8, bottom: 8, left: 8 }
@@ -125,32 +128,39 @@ function drawFace(
   contentX: number,
   contentY: number,
 ): void {
-  if (config.faceMode !== 'face') return;
-  const faceSet = config.faceSet;
+  drawFaceSlot(ctx, config.faceLeft, 'left', contentX, contentY);
+  drawFaceSlot(ctx, config.faceRight, 'right', contentX, contentY);
+}
+
+/** 绘制单侧脸图（未启用或未选择素材时留空） */
+function drawFaceSlot(
+  ctx: CanvasRenderingContext2D,
+  slot: FaceSlot,
+  position: 'left' | 'right',
+  contentX: number,
+  contentY: number,
+): void {
+  if (!slot.enabled) return;
+  const faceSet = slot.faceSet;
   if (!faceSet.image) return;
 
   // 计算脸图目标坐标（contents 内）
-  let faceX: number;
-  let faceY: number;
-  if (config.facePosition === 'left') {
-    faceX = contentX + RPG_CONSTANTS.FACE_LEFT_MARGIN;
-    faceY = contentY + RPG_CONSTANTS.FACE_TOP_MARGIN;
-  } else {
-    faceX = contentX + RPG_CONSTANTS.FACE_RIGHT_X;
-    faceY = contentY + RPG_CONSTANTS.FACE_TOP_MARGIN;
-  }
+  const faceX =
+    contentX +
+    (position === 'left' ? RPG_CONSTANTS.FACE_LEFT_MARGIN : RPG_CONSTANTS.FACE_RIGHT_X);
+  const faceY = contentY + RPG_CONSTANTS.FACE_TOP_MARGIN;
 
   // 源坐标（4x4 网格，每格 48x48）
-  const idx = config.faceIndex;
+  const idx = slot.faceIndex;
   const srcX = (idx % 4) * RPG_CONSTANTS.FACE_SIZE;
   const srcY = Math.floor(idx / 4) * RPG_CONSTANTS.FACE_SIZE;
 
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   // 翻转
-  if (config.faceFlipX || config.faceFlipY) {
+  if (slot.flipX || slot.flipY) {
     ctx.translate(faceX + RPG_CONSTANTS.FACE_SIZE / 2, faceY + RPG_CONSTANTS.FACE_SIZE / 2);
-    ctx.scale(config.faceFlipX ? -1 : 1, config.faceFlipY ? -1 : 1);
+    ctx.scale(slot.flipX ? -1 : 1, slot.flipY ? -1 : 1);
     ctx.translate(-RPG_CONSTANTS.FACE_SIZE / 2, -RPG_CONSTANTS.FACE_SIZE / 2);
     ctx.drawImage(
       faceSet.image as CanvasImageSource,
@@ -183,12 +193,8 @@ function drawFace(
  * 计算文字起始 x（contents 内）
  */
 function getTextStartX(config: MessageWindowConfig): number {
-  if (config.faceMode === 'none') return 0;
-  if (config.facePosition === 'left') {
-    return RPG_CONSTANTS.FACE_LEFT_MARGIN + RPG_CONSTANTS.FACE_SIZE + RPG_CONSTANTS.FACE_RIGHT_MARGIN;
-  }
-  // 脸图在右：文字从 0 开始
-  return 0;
+  if (!config.faceLeft.enabled) return 0;
+  return RPG_CONSTANTS.FACE_LEFT_MARGIN + RPG_CONSTANTS.FACE_SIZE + RPG_CONSTANTS.FACE_RIGHT_MARGIN;
 }
 
 /**

@@ -46,12 +46,6 @@ export const RPG_CONSTANTS = {
 /** 文字兜底色：白色（没有 System 配色、或字号非 12px 时使用） */
 export const DEFAULT_TEXT_RGB = 0xffffff;
 
-/** 脸图状态 */
-export type FaceMode = 'none' | 'face';
-/** 'none' = 禁用（不占空间）, 'face' = 选择脸图（占空间，未选择时位置留空） */
-
-export type FacePosition = 'left' | 'right';
-
 export type BackgroundMode = 'transparent' | 'system' | 'image';
 
 export type StretchMode = 'stretch' | 'tile';
@@ -82,6 +76,16 @@ export interface SystemImageRef {
 export interface FaceSetRef {
   name: string | null;
   image: LoadedImage | null;
+}
+
+/** 单侧脸图设置（左 / 右各一份） */
+export interface FaceSlot {
+  /** 是否启用该侧脸图（不启用时不占空间） */
+  enabled: boolean;
+  faceSet: FaceSetRef;
+  faceIndex: number; // 0-15
+  flipX: boolean;
+  flipY: boolean;
 }
 
 /**
@@ -156,13 +160,9 @@ export interface MessageWindowConfig {
   backgroundImageTransparentColor: string | null;
   backgroundStretch: StretchMode; // 默认 'stretch'
 
-  // === 脸图设置 ===
-  faceMode: FaceMode;
-  faceSet: FaceSetRef;
-  faceIndex: number; // 0-15
-  facePosition: FacePosition;
-  faceFlipX: boolean;
-  faceFlipY: boolean;
+  // === 脸图设置（左右各一份，目前互斥启用） ===
+  faceLeft: FaceSlot;
+  faceRight: FaceSlot;
 
   // === 配色（来自文字设置页的 System 选择器） ===
   colorSystem: SystemImageRef;
@@ -203,12 +203,20 @@ export const DEFAULT_CONFIG: MessageWindowConfig = {
   backgroundImageTransparentColor: null,
   backgroundStretch: 'stretch',
 
-  faceMode: 'none',
-  faceSet: { name: null, image: null },
-  faceIndex: 0,
-  facePosition: 'left',
-  faceFlipX: false,
-  faceFlipY: false,
+  faceLeft: {
+    enabled: false,
+    faceSet: { name: null, image: null },
+    faceIndex: 0,
+    flipX: false,
+    flipY: false,
+  },
+  faceRight: {
+    enabled: false,
+    faceSet: { name: null, image: null },
+    faceIndex: 0,
+    flipX: false,
+    flipY: false,
+  },
 
   colorSystem: { name: 'System', image: null, transparentColor: '#000000' },
 };

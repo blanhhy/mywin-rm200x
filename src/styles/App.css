@@ -302,6 +302,18 @@
   align-items: center;
 }
 
+/* 选择按钮允许收缩（flex 项默认 min-width:auto），
+   否则长文件名会把右侧的“清除”等按钮挤出容器 */
+.picker-row > .upload-btn {
+  min-width: 0;
+}
+
+.picker-row > .upload-btn > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .upload-btn {
   display: inline-flex;
   align-items: center;
@@ -513,6 +525,24 @@
   border-color: var(--color-accent);
   background: rgba(240, 160, 64, 0.2);
   box-shadow: 0 0 6px rgba(240, 160, 64, 0.5);
+}
+
+/* === 脸图分栏（左 / 右） === */
+.face-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.face-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 内容始终展示，仅在禁用时变暗 */
+.face-section-body.disabled {
+  opacity: 0.45;
 }
 
 /* === 预览区 === */

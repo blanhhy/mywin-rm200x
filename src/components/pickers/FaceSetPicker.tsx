@@ -6,7 +6,7 @@
 //   - 列表底部"新增素材"按钮（导入 192×192 或 48 的倍数的图片）
 //
 // 注意：FaceSet 不处理透明色。因为实际使用的脸图总是一个完整的 48×48 子图，
-// 即使 FaceSet 中有空白位置也不会被选中；未选择脸图时位置留空（由父级 faceMode='face' + 未选择素材表达）。
+// 即使 FaceSet 中有空白位置也不会被选中；未选择脸图时位置留空（由父级 faceLeft/faceRight.enabled + 未选择素材表达）。
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Modal from '../Modal';
