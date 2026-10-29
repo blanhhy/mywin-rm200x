@@ -11,7 +11,7 @@
 //
 // 透明色默认采用推断策略（System 布局取最后一格，回退到角落/最大连通区域）。
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Modal from '../Modal';
 import {
   addUserAsset,
@@ -61,6 +61,8 @@ export default function SystemPicker({
   const [transparentColor, setTransparentColor] = useState(currentTransparentColor);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const selectedItemRef = useRef<HTMLDivElement>(null);
 
   // 打开选择器时，若距上次重载已足够久则重新读取素材目录
   useEffect(() => {
@@ -203,6 +205,24 @@ export default function SystemPicker({
     });
   }, [assets]);
 
+  // 打开时定位到当前已选中的素材（素材列表异步加载完成后再补一次），之后不再跟随滚动
+  const initialScrollDoneRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!open) {
+      initialScrollDoneRef.current = false;
+      return;
+    }
+    if (initialScrollDoneRef.current) return;
+    if (!selectedName || selectedName !== currentName) return;
+    const list = listRef.current;
+    const item = selectedItemRef.current;
+    if (!list || !item) return;
+    const listRect = list.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+    list.scrollTop += itemRect.top - listRect.top - (list.clientHeight - itemRect.height) / 2;
+    initialScrollDoneRef.current = true;
+  }, [open, selectedName, currentName, sortedAssets]);
+
   return (
     <Modal
       open={open}
@@ -224,7 +244,7 @@ export default function SystemPicker({
         </>
       }
     >
-      <div className="asset-list">
+      <div className="asset-list" ref={listRef}>
         <div className="asset-list-header">
           <span>System 素材</span>
           <span>{sortedAssets.length}</span>
@@ -232,6 +252,7 @@ export default function SystemPicker({
         {sortedAssets.map((a) => (
           <div
             key={`${a.source}:${a.name}`}
+            ref={selectedName === a.name ? selectedItemRef : undefined}
             className={`asset-item ${selectedName === a.name ? 'selected' : ''}`}
             onClick={() => setSelectedName(a.name)}
             title={

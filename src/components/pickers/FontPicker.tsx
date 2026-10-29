@@ -7,7 +7,7 @@
 //
 // 之所以分成两级，是因为本机字体动辄几百上千个，不应该直接混进已添加字体列表。
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Modal from '../Modal';
 import { ensureFontLoaded, importUserFont, removeUserFont } from '../../engine/fontLoader';
 import { useStore } from '../../store/useStore';
@@ -30,11 +30,18 @@ export type FontPickerValue = CustomFontEntry;
 
 export interface FontPickerProps {
   open: boolean;
+  /** 当前已应用的字体族名（用于打开时定位到该项） */
+  currentFamily?: string | null;
   onClose: () => void;
   onApply: (value: FontPickerValue) => void;
 }
 
-export default function FontPicker({ open, onClose, onApply }: FontPickerProps) {
+export default function FontPicker({
+  open,
+  currentFamily = null,
+  onClose,
+  onApply,
+}: FontPickerProps) {
   /** 已添加的字体保存在全局 store，切换标签页/重开弹窗都不会丢失 */
   const fonts = useStore((s) => s.customFonts);
   const addCustomFonts = useStore((s) => s.addCustomFonts);
@@ -45,19 +52,47 @@ export default function FontPicker({ open, onClose, onApply }: FontPickerProps) 
   /** Escape 监听在两级弹窗上都会触发，用它让一级忽略"二级打开时"的关闭 */
   const localOpenRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const selectedItemRef = useRef<HTMLDivElement>(null);
+  const initialScrollDoneRef = useRef(false);
+  const openedRef = useRef(false);
 
   useEffect(() => {
     localOpenRef.current = localOpen;
   }, [localOpen]);
 
-  // 关闭时清空选中，避免下次打开残留
+  // 关闭时清空临时选中；打开时定位到当前已应用的字体
   useEffect(() => {
     if (!open) {
+      openedRef.current = false;
       setSelected(null);
       setLocalOpen(false);
       setError(null);
+      return;
     }
-  }, [open]);
+    if (openedRef.current) return;
+    openedRef.current = true;
+    setSelected(
+      currentFamily ? (fonts.find((f) => f.family === currentFamily) ?? null) : null,
+    );
+  }, [open, currentFamily, fonts]);
+
+  // 打开时把这个字体滚动到列表可视区域，之后不再跟随滚动
+  useLayoutEffect(() => {
+    if (!open) {
+      initialScrollDoneRef.current = false;
+      return;
+    }
+    if (initialScrollDoneRef.current) return;
+    if (!currentFamily || !selected || selected.family !== currentFamily) return;
+    const list = listRef.current;
+    const item = selectedItemRef.current;
+    if (!list || !item) return;
+    const listRect = list.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+    list.scrollTop += itemRect.top - listRect.top - (list.clientHeight - itemRect.height) / 2;
+    initialScrollDoneRef.current = true;
+  }, [open, currentFamily, selected]);
 
   const localSupported =
     typeof window !== 'undefined' && typeof window.queryLocalFonts === 'function';
@@ -131,7 +166,7 @@ export default function FontPicker({ open, onClose, onApply }: FontPickerProps) 
           </>
         }
       >
-        <div className="asset-list">
+        <div className="asset-list" ref={listRef}>
           <div className="asset-list-header">
             <span>字体</span>
             <span>{fonts.length}</span>
@@ -139,6 +174,11 @@ export default function FontPicker({ open, onClose, onApply }: FontPickerProps) 
           {fonts.map((f) => (
             <div
               key={`${f.source}:${f.family}`}
+              ref={
+                selected?.family === f.family && selected?.source === f.source
+                  ? selectedItemRef
+                  : undefined
+              }
               className={`asset-item ${
                 selected?.family === f.family && selected?.source === f.source ? 'selected' : ''
               }`}

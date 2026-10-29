@@ -228,6 +228,7 @@ export default function TextTab() {
 
       <FontPicker
         open={fontPickerOpen}
+        currentFamily={font.family}
         onClose={() => setFontPickerOpen(false)}
         onApply={handleFontApply}
       />

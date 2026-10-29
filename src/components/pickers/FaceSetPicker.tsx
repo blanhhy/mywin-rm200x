@@ -8,7 +8,7 @@
 // 注意：FaceSet 不处理透明色。因为实际使用的脸图总是一个完整的 48×48 子图，
 // 即使 FaceSet 中有空白位置也不会被选中；未选择脸图时位置留空（由父级 faceLeft/faceRight.enabled + 未选择素材表达）。
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Modal from '../Modal';
 import {
   addUserAsset,
@@ -57,6 +57,8 @@ export default function FaceSetPicker({
   const [faceIndex, setFaceIndex] = useState(currentFaceIndex);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const selectedItemRef = useRef<HTMLDivElement>(null);
 
   // 打开选择器时，若距上次重载已足够久则重新读取素材目录
   useEffect(() => {
@@ -149,6 +151,24 @@ export default function FaceSetPicker({
     });
   }, [assets]);
 
+  // 打开时定位到当前已选中的素材（素材列表异步加载完成后再补一次），之后不再跟随滚动
+  const initialScrollDoneRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!open) {
+      initialScrollDoneRef.current = false;
+      return;
+    }
+    if (initialScrollDoneRef.current) return;
+    if (!selectedName || selectedName !== currentName) return;
+    const list = listRef.current;
+    const item = selectedItemRef.current;
+    if (!list || !item) return;
+    const listRect = list.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+    list.scrollTop += itemRect.top - listRect.top - (list.clientHeight - itemRect.height) / 2;
+    initialScrollDoneRef.current = true;
+  }, [open, selectedName, currentName, sortedAssets]);
+
   // 计算 FaceSet 图片尺寸是否符合 4×4 网格
   const imageSize = loadedImage
     ? loadedImage instanceof HTMLImageElement
@@ -178,7 +198,7 @@ export default function FaceSetPicker({
         </>
       }
     >
-      <div className="asset-list">
+      <div className="asset-list" ref={listRef}>
         <div className="asset-list-header">
           <span>FaceSet 素材</span>
           <span>{sortedAssets.length}</span>
@@ -186,6 +206,7 @@ export default function FaceSetPicker({
         {sortedAssets.map((a) => (
           <div
             key={`${a.source}:${a.name}`}
+            ref={selectedName === a.name ? selectedItemRef : undefined}
             className={`asset-item ${selectedName === a.name ? 'selected' : ''}`}
             onClick={() => setSelectedName(a.name)}
             title={
