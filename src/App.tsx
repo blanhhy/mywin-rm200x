@@ -169,7 +169,7 @@ function WorkspaceSelector() {
 }
 
 export default function App() {
-  const { activeTab, setActiveTab, config, updateConfig, initialized, setInitialized, resetConfig, restoreWorkspace, theme, toggleTheme, workspace, drawerOpen, toggleDrawer, refreshAssets, assetRefreshing } =
+  const { activeTab, setActiveTab, config, updateConfig, initialized, setInitialized, restoreWorkspace, theme, toggleTheme, workspace, drawerOpen, toggleDrawer, refreshAssets, assetRefreshing } =
     useStore();
 
   // 应用启动时自动恢复上次的工作区
@@ -224,9 +224,6 @@ export default function App() {
             title={workspace ? '重载素材目录（System / FaceSet / Picture）' : '打开工作区后可刷新素材目录'}
           >
             ⟳
-          </button>
-          <button className="reset-btn" onClick={resetConfig} title="重置为默认配置">
-            重置
           </button>
           <button className="reset-btn theme-btn" onClick={toggleTheme} title={theme === 'dark' ? '切换到亮色' : '切换到暗色'}>
             {theme === 'dark' ? '☀' : '☾'}

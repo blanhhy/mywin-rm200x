@@ -58,7 +58,6 @@ interface StoreState {
   updateConfig: (updater: (config: MessageWindowConfig) => MessageWindowConfig) => void;
   patchConfig: (partial: Partial<MessageWindowConfig>) => void;
   setActiveTab: (tab: StoreState['activeTab']) => void;
-  resetConfig: () => void;
   restoreStandardWindow: () => void;
   setFollowTargetPicture: (v: boolean) => void;
   setInitialized: (v: boolean) => void;
@@ -190,11 +189,6 @@ export const useStore = create<StoreState>((set, get) => ({
     })),
 
   setActiveTab: (tab) => set({ activeTab: tab }),
-
-  resetConfig: () =>
-    set({
-      config: { ...DEFAULT_CONFIG },
-    }),
 
   restoreStandardWindow: () =>
     set((state) => ({
