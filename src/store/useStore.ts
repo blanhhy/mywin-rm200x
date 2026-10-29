@@ -84,10 +84,15 @@ interface StoreState {
   removeAssetFromWorkspace: (category: AssetCategory, name: string) => Promise<boolean>;
   exportPNGToWorkspace: (filename: string, pngData: Uint8Array) => Promise<string | null>;
   isFileSystemSupported: () => boolean;
-  /** 重载工作区素材目录（System / FaceSet / Picture），不改动任何表单配置 */
-  refreshAssets: () => Promise<void>;
-  /** 距上次重载超过最小间隔时才重载（素材选择器打开时调用） */
-  refreshAssetsIfStale: () => void;
+  /**
+   * 重载工作区素材目录（System / FaceSet），不改动任何表单配置
+   * @param includePictures 是否同时重载 Picture 图库（会重读所有缩略图，仅手动刷新时使用）
+   */
+  refreshAssets: (includePictures?: boolean) => Promise<void>;
+  /** 只重载某一类素材目录（素材选择器打开时用，避免顺带重读另一类） */
+  refreshAsset: (category: AssetCategory) => Promise<void>;
+  /** 某一类素材距上次重载超过最小间隔时才重载 */
+  refreshAssetIfStale: (category: AssetCategory) => void;
 
   // 替换模式操作
   toggleDrawer: () => void;
@@ -113,12 +118,12 @@ const savedTheme = (typeof localStorage !== 'undefined' && localStorage.getItem(
 /** 素材目录自动重载的最小间隔，避免短时间内反复读取磁盘 */
 const ASSET_REFRESH_MIN_INTERVAL_MS = 3000;
 
-/** 上次重载素材目录的时间（仅用于节流，不参与渲染） */
-let lastAssetRefreshAt = 0;
+/** 各类素材目录上次重载的时间（按类别分别节流，仅用于节流，不参与渲染） */
+const lastAssetRefreshAt: Partial<Record<AssetCategory, number>> = {};
 
 /** 记录一次素材目录重载时间点 */
-function markAssetsRefreshed(): void {
-  lastAssetRefreshAt = Date.now();
+function markAssetsRefreshed(category: AssetCategory): void {
+  lastAssetRefreshAt[category] = Date.now();
 }
 
 /**
@@ -173,7 +178,8 @@ async function adoptWorkspace(
   ]);
   setWorkspaceAssets('System', sysAssets);
   setWorkspaceAssets('FaceSet', faceAssets);
-  markAssetsRefreshed();
+  markAssetsRefreshed('System');
+  markAssetsRefreshed('FaceSet');
   if (ws.handle) await addRecentWorkspace(ws.handle);
 }
 
@@ -264,7 +270,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   isFileSystemSupported: () => isFileSystemAccessSupported(),
 
-  refreshAssets: async () => {
+  refreshAssets: async (includePictures = true) => {
     const { workspace, assetRefreshing } = get();
     if (!workspace || assetRefreshing) return;
     set({ assetRefreshing: true, workspaceError: null });
@@ -276,8 +282,10 @@ export const useStore = create<StoreState>((set, get) => ({
       ]);
       setWorkspaceAssets('System', sysAssets);
       setWorkspaceAssets('FaceSet', faceAssets);
-      await get().refreshPictures();
-      markAssetsRefreshed();
+      markAssetsRefreshed('System');
+      markAssetsRefreshed('FaceSet');
+      // 刷新图库会让所有缩略图重读一遍，只有手动重载时才一并做
+      if (includePictures) await get().refreshPictures();
     } catch (e) {
       set({ workspaceError: String(e) || '刷新素材目录失败' });
     } finally {
@@ -285,10 +293,24 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  refreshAssetsIfStale: () => {
+  refreshAsset: async (category) => {
+    const { workspace } = get();
+    if (!workspace) return;
+    try {
+      // 外部对素材目录的增删改不会被浏览器感知，只能重新读取
+      const assets = await listWorkspaceAssets(workspace, category);
+      setWorkspaceAssets(category, assets);
+      markAssetsRefreshed(category);
+    } catch (e) {
+      set({ workspaceError: String(e) || '刷新素材目录失败' });
+    }
+  },
+
+  refreshAssetIfStale: (category) => {
     if (!get().workspace) return;
-    if (Date.now() - lastAssetRefreshAt < ASSET_REFRESH_MIN_INTERVAL_MS) return;
-    void get().refreshAssets();
+    const last = lastAssetRefreshAt[category] ?? 0;
+    if (Date.now() - last < ASSET_REFRESH_MIN_INTERVAL_MS) return;
+    void get().refreshAsset(category);
   },
 
   openWorkspace: async () => {
