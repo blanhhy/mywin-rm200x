@@ -346,7 +346,7 @@ export default function Preview() {
           预览
         </label>
         <button className="export-btn" onClick={handleExport}>
-          {selectedPicture ? '覆盖保存' : workspace ? '保存到工作区' : '保存为 PNG'}
+          {selectedPicture ? '覆盖' : workspace ? '保存' : '下载'}
         </button>
       </div>
       {exportMsg && <div className={`export-msg ${exportError ? 'error' : ''}`}>{exportMsg}</div>}
