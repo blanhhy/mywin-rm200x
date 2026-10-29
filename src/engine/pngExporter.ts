@@ -583,11 +583,11 @@ export async function recommendTransparentColorFromPicture(
 /**
  * 触发浏览器下载
  */
-export function downloadPNG(pngData: Uint8Array, filename: string): void {
+export function downloadPNG(pngData: Uint8Array, filename: string, mime = 'image/png'): void {
   const buf = new ArrayBuffer(pngData.byteLength);
   const view = new Uint8Array(buf);
   view.set(pngData);
-  const blob = new Blob([buf], { type: 'image/png' });
+  const blob = new Blob([buf], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

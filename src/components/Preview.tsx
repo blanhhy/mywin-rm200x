@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { renderMessageWindow, computeWindowSize, loadImage } from '../engine/messageWindow';
-import { readPictureDataUrl } from '../engine/workspace';
+import { readPictureDataUrl, listWorkspacePictures } from '../engine/workspace';
 import { getSystemImageRenderer } from '../engine/systemImage';
 import Modal from './Modal';
 import {
@@ -69,6 +69,16 @@ export default function Preview() {
     target: { w: number; h: number };
     mode: 'indexed' | 'rgba';
   } | null>(null);
+  /** 等待用户确认文件名的保存/下载请求 */
+  const [pendingSave, setPendingSave] = useState<{
+    mode: 'indexed' | 'rgba';
+    force: boolean;
+    partialTarget?: { w: number; h: number };
+  } | null>(null);
+  const [nameInput, setNameInput] = useState('');
+  const [nameExt, setNameExt] = useState<'png' | 'bmp'>('png');
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [nameChecking, setNameChecking] = useState(false);
   const isMobile = useIsMobile();
 
   // 切换对照图片时重置尺寸缓存
@@ -176,15 +186,26 @@ export default function Preview() {
     mode: 'indexed' | 'rgba',
     force = false,
     partialTarget?: { w: number; h: number },
+    target?: { stem: string; ext: 'png' | 'bmp' },
   ) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    // 保存/下载（非覆盖）先让用户确认文件名与格式
+    if (!selectedPicture && !target) {
+      setPendingSave({ mode, force, partialTarget });
+      setNameInput(`mywin-${Date.now()}`);
+      setNameExt('png');
+      setNameError(null);
+      return;
+    }
+
     // 替换模式下校验目标图片尺寸是否与当前画面完全一致
     if (selectedPicture && workspace && !force && !partialTarget) {
-      const target = compareDims ?? (pictureDataUrl ? await loadImageSize(pictureDataUrl) : null);
-      if (target && (target.w !== canvas.width || target.h !== canvas.height)) {
-        setSizeMismatch({ target, mode });
+      const targetSize =
+        compareDims ?? (pictureDataUrl ? await loadImageSize(pictureDataUrl) : null);
+      if (targetSize && (targetSize.w !== canvas.width || targetSize.h !== canvas.height)) {
+        setSizeMismatch({ target: targetSize, mode });
         return;
       }
     }
@@ -207,8 +228,14 @@ export default function Preview() {
         saveCanvas = composite;
       }
 
+      // 覆盖时按目标文件的扩展名写入；另存时按用户在命名窗口中选的格式
+      const ext: 'png' | 'bmp' = selectedPicture
+        ? targetIsBmp
+          ? 'bmp'
+          : 'png'
+        : target!.ext;
       let fileData: Uint8Array;
-      if (targetIsBmp) {
+      if (ext === 'bmp') {
         // BMP 无 alpha 通道，只能用调色板 idx-0 表达透明，故固定写入索引色 BMP
         fileData = canvasTo8bitBMP(saveCanvas, { transparentColor });
       } else if (mode === 'rgba') {
@@ -216,7 +243,7 @@ export default function Preview() {
       } else {
         fileData = await canvasTo8bitPNG(saveCanvas, { transparentColor });
       }
-      const filename = `mywin-${Date.now()}.png`;
+      const filename = selectedPicture ? selectedPicture.fileName : `${target!.stem}.${ext}`;
       if (workspace) {
         // 替换模式下覆盖选中的图片，否则另存为新文件
         const savedName = selectedPicture
@@ -235,7 +262,7 @@ export default function Preview() {
           setExportMsg(selectedPicture ? '覆盖图片失败' : '导出到工作区失败');
         }
       } else {
-        downloadPNG(fileData, filename);
+        downloadPNG(fileData, filename, ext === 'bmp' ? 'image/bmp' : 'image/png');
         setExportError(false);
         setExportMsg(mode === 'rgba' ? '已开始下载（真彩色）' : '已开始下载');
       }
@@ -254,6 +281,45 @@ export default function Preview() {
       return;
     }
     doSave('indexed');
+  };
+
+  // 命名窗口确认：校验文件名，工作区已有同名文件时拒绝保存
+  const confirmSaveName = async () => {
+    if (!pendingSave) return;
+    const stem = nameInput.trim();
+    if (!stem) {
+      setNameError('请输入文件名');
+      return;
+    }
+    if (/[\\/:*?"<>|]/.test(stem)) {
+      setNameError('文件名不能包含 \\ / : * ? " < > |');
+      return;
+    }
+    const fileName = `${stem}.${nameExt}`;
+
+    if (workspace) {
+      setNameChecking(true);
+      try {
+        const existing = await listWorkspacePictures(workspace);
+        if (existing.some((p) => p.fileName.toLowerCase() === fileName.toLowerCase())) {
+          setNameError(`工作区 Picture 中已存在 ${fileName}`);
+          return;
+        }
+      } catch (e) {
+        setNameError(`检查同名文件失败：${e}`);
+        return;
+      } finally {
+        setNameChecking(false);
+      }
+    }
+
+    const request = pendingSave;
+    setPendingSave(null);
+    setNameError(null);
+    await doSave(request.mode, request.force, request.partialTarget, {
+      stem,
+      ext: nameExt,
+    });
   };
 
   return (
@@ -486,6 +552,67 @@ export default function Preview() {
           </p>
           <p><strong>仍然覆盖</strong>：直接替换为当前图片，导致尺寸变化</p>
           <p><strong>部分覆盖</strong>：保留原图尺寸，但会将两张图片叠加</p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={pendingSave !== null}
+        title={workspace ? '保存图片' : '下载图片'}
+        onClose={() => {
+          setPendingSave(null);
+          setNameError(null);
+        }}
+        width={420}
+        footer={
+          <>
+            <button
+              className="modal-btn"
+              onClick={() => {
+                setPendingSave(null);
+                setNameError(null);
+              }}
+            >
+              取消
+            </button>
+            <button
+              className="modal-btn primary"
+              onClick={confirmSaveName}
+              disabled={nameChecking}
+            >
+              {nameChecking ? '检查中…' : workspace ? '保存' : '下载'}
+            </button>
+          </>
+        }
+      >
+        <div className="field-group">
+          <label className="field-label">文件名</label>
+          <div className="filename-row">
+            <input
+              className="filename-input"
+              value={nameInput}
+              autoFocus
+              onChange={(e) => {
+                setNameInput(e.target.value);
+                setNameError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void confirmSaveName();
+              }}
+            />
+            <span className="filename-dot">.</span>
+            <select
+              value={nameExt}
+              onChange={(e) => {
+                setNameExt(e.target.value as 'png' | 'bmp');
+                setNameError(null);
+              }}
+              disabled={nameChecking}
+            >
+              <option value="png">png</option>
+              <option value="bmp">bmp</option>
+            </select>
+          </div>
+          {nameError && <small className="filename-error">{nameError}</small>}
         </div>
       </Modal>
     </div>

@@ -675,6 +675,27 @@
   background: #3d6aa3;
 }
 
+/* === 保存/下载命名窗口 === */
+.filename-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filename-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.filename-dot {
+  color: var(--color-text-muted);
+}
+
+.filename-error {
+  color: var(--color-danger);
+  font-size: 11px;
+}
+
 .export-msg {
   display: block;
   margin-top: 8px;

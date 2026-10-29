@@ -759,13 +759,11 @@ async function exportToFilesystem(
   if (!workspace.handle) throw new Error('工作区句柄不可用');
   const picDir = await getPictureDir(workspace);
 
-  let finalName = filename.endsWith('.png') ? filename : `${filename}.png`;
+  let finalName = /\.(png|bmp)$/i.test(filename) ? filename : `${filename}.png`;
   let counter = 2;
-  let existing = await picDir.getFileHandle(finalName).catch(() => null);
-  while (existing) {
-    const base = finalName.replace(/\.png$/, '');
-    finalName = `${base}_${counter}.png`;
-    existing = await picDir.getFileHandle(finalName).catch(() => null);
+  while (await picDir.getFileHandle(finalName).catch(() => null)) {
+    const ext = finalName.match(/\.(png|bmp)$/i)?.[0] ?? '.png';
+    finalName = `${finalName.slice(0, -ext.length)}_${counter}${ext}`;
     counter++;
   }
 
@@ -785,14 +783,14 @@ async function exportFromVirtual(
   filename: string,
   pngData: Uint8Array,
 ): Promise<string> {
-  let finalName = filename.endsWith('.png') ? filename : `${filename}.png`;
+  let finalName = /\.(png|bmp)$/i.test(filename) ? filename : `${filename}.png`;
 
   // 检查重名
   const existing = await listVirtualFiles('Picture/');
   let counter = 2;
   while (existing.some((f) => f.key === `Picture/${finalName}`)) {
-    const base = finalName.replace(/\.png$/, '');
-    finalName = `${base}_${counter}.png`;
+    const ext = finalName.match(/\.(png|bmp)$/i)?.[0] ?? '.png';
+    finalName = `${finalName.slice(0, -ext.length)}_${counter}${ext}`;
     counter++;
   }
 
@@ -800,7 +798,7 @@ async function exportFromVirtual(
   const blob = new Blob([pngData.buffer.slice(
     pngData.byteOffset,
     pngData.byteOffset + pngData.byteLength,
-  ) as ArrayBuffer], { type: 'image/png' });
+  ) as ArrayBuffer], { type: mimeFromFileName(finalName) });
   const dataUrl = await blobToDataUrl(blob);
   const cleanName = finalName.replace(/\.[^.]+$/, '');
   await storeVirtualFile(`Picture/${finalName}`, { name: cleanName, dataUrl });
