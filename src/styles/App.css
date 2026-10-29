@@ -1782,6 +1782,9 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* 默认 stretch 会把预览容器拉到整行（标签文字）宽度，
+     图片较窄时右侧就露出一节棋盘格空白 */
+  align-items: flex-start;
 }
 
 .compare-label {
