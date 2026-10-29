@@ -509,7 +509,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const { workspace } = get();
     if (!workspace) return { ok: false, message: '未打开工作区' };
     const meta = await readPictureMeta(workspace, p.fileName);
-    if (!meta) return { ok: false, message: '该图片没有保存参数' };
+    if (!meta) return { ok: false, message: '不是由 mywin 创建的图片' };
     try {
       const restored = await buildConfigFromMeta(meta, workspace);
       set((s) => ({
@@ -520,12 +520,10 @@ export const useStore = create<StoreState>((set, get) => ({
       return {
         ok: true,
         message:
-          restored.warnings.length > 0
-            ? `已读入参数，但${restored.warnings.join('；')}`
-            : '已读入参数',
+          restored.warnings.length > 0 ? restored.warnings.join('；') : '',
       };
     } catch (e) {
-      return { ok: false, message: `读入参数失败：${e}` };
+      return { ok: false, message: '读取参数失败' };
     }
   },
 }));

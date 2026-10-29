@@ -207,15 +207,15 @@ export default function PictureDrawer() {
     if (!menu) return;
     const picture = menu.picture;
     setMenu(null);
+    // 成功不打扰；只有出错或部分参数恢复不了才提示
     if (action === 'edit') {
       const result = await editPictureFromMeta(picture);
-      setNotice(result.message);
+      if (result.message) setNotice(result.message);
     } else if (action === 'reference') {
       setPictureAsReference(picture);
-      setNotice(`已设为参考：${picture.fileName}`);
     } else {
       const ok = await setPictureAsBackground(picture);
-      setNotice(ok ? `已设为背景：${picture.fileName}` : '设为背景失败');
+      if (!ok) setNotice(`无法读取 ${picture.fileName}，无法设为背景`);
     }
   };
 
@@ -304,7 +304,6 @@ export default function PictureDrawer() {
                   onPointerMove={clearLongPress}
                   onPointerUp={clearLongPress}
                   onPointerCancel={clearLongPress}
-                  title={selected ? `${p.fileName}（单击取消选中，右键更多）` : `选中以替换：${p.fileName}`}
                   draggable
                   onDragStart={(e) => {
                     // 供【背景】页"参考已有"模式接收
@@ -337,9 +336,8 @@ export default function PictureDrawer() {
           style={{ left: menu.x, top: menu.y }}
           role="menu"
         >
-          <div className="picture-menu-title">{menu.picture.fileName}</div>
           <button role="menuitem" onClick={() => handleMenuAction('edit')}>
-            编辑（读入参数）
+            重新编辑
           </button>
           <button role="menuitem" onClick={() => handleMenuAction('reference')}>
             设为参考

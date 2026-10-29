@@ -1781,7 +1781,7 @@
 .picture-menu {
   position: fixed;
   z-index: 90;
-  min-width: 180px;
+  min-width: 120px;
   display: flex;
   flex-direction: column;
   padding: 4px;
@@ -1789,17 +1789,6 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
-}
-
-.picture-menu-title {
-  padding: 4px 8px 6px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--color-border);
-  font-size: 11px;
-  color: var(--color-text-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .picture-menu button {

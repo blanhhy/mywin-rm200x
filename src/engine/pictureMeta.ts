@@ -243,14 +243,14 @@ async function restoreSystemRef(
   if (!ref.name) return fallback;
   const asset = findAssetByRef('System', ref);
   if (!asset) {
-    warnings.push(`素材「${ref.name}」已不存在`);
+    warnings.push(`未找到素材「${ref.name}」`);
     return fallback;
   }
   try {
     const image = await loadImage(asset.url);
     return { name: asset.name, image, transparentColor: ref.transparentColor ?? '#000000' };
   } catch {
-    warnings.push(`素材「${ref.name}」加载失败`);
+    warnings.push(`无法加载素材「${ref.name}」`);
     return fallback;
   }
 }
@@ -274,14 +274,14 @@ async function restoreFaceSlot(
   if (!slot.faceSet.name) return base;
   const asset = findAssetByRef('FaceSet', slot.faceSet);
   if (!asset) {
-    warnings.push(`脸图素材「${slot.faceSet.name}」已不存在`);
+    warnings.push(`未找到脸图集「${slot.faceSet.name}」`);
     return base;
   }
   try {
     const image = await loadImage(asset.url);
     return { ...base, faceSet: { name: asset.name, image } };
   } catch {
-    warnings.push(`脸图素材「${slot.faceSet.name}」加载失败`);
+    warnings.push(`无法加载脸图集「${slot.faceSet.name}」`);
     return base;
   }
 }
@@ -304,7 +304,7 @@ export async function buildConfigFromMeta(
       try {
         await ensureFontLoaded(customFont.family);
       } catch {
-        warnings.push(`字体「${customFont.label || customFont.family}」加载失败，已回退到内置字体`);
+        warnings.push(`无法加载字体「${customFont.label || customFont.family}」`);
         customFont = { ...customFont, family: null };
       }
     }
@@ -335,15 +335,15 @@ export async function buildConfigFromMeta(
           backgroundImageFileName = fileName;
         } catch {
           background.backgroundImage = null;
-          warnings.push(`背景参考图片 ${fileName} 无法解析`);
+          warnings.push(`无法加载背景参考 ${fileName}`);
         }
       } else {
         background.backgroundImage = null;
-        warnings.push(`背景参考图片 ${fileName} 已不存在`);
+        warnings.push(`未找到背景参考 ${fileName}`);
       }
     } else {
       background.backgroundImage = null;
-      warnings.push('背景参考图片来自工作区之外，无法自动恢复，请重新选择');
+      warnings.push('背景参考需要重新选择');
     }
   } else {
     background.backgroundMode = 'transparent';
