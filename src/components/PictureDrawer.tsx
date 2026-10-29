@@ -144,11 +144,80 @@ export default function PictureDrawer() {
   const togglePictureSelection = useStore((s) => s.togglePictureSelection);
   const refreshPictures = useStore((s) => s.refreshPictures);
   const workspace = useStore((s) => s.workspace);
+  const editPictureFromMeta = useStore((s) => s.editPictureFromMeta);
+  const setPictureAsReference = useStore((s) => s.setPictureAsReference);
+  const setPictureAsBackground = useStore((s) => s.setPictureAsBackground);
   const bodyRef = useRef<HTMLDivElement>(null);
   // 桌面端不截断：visibleCount 足够大即可一次渲染全部
   const [visibleCount, setVisibleCount] = useState(
     IS_MOBILE ? PICTURE_PAGE_SIZE : Number.MAX_SAFE_INTEGER,
   );
+
+  /** 右键 / 长按菜单 */
+  const [menu, setMenu] = useState<{ x: number; y: number; picture: PictureEntry } | null>(null);
+  /** 操作结果提示 */
+  const [notice, setNotice] = useState<string | null>(null);
+  /** 长按已弹出菜单时，随后的 click 不应触发选中切换 */
+  const suppressClickRef = useRef(false);
+  const longPressTimerRef = useRef<number | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const clearLongPress = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  // 关闭菜单：点菜单外任意处或滚动
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: Event) => {
+      if (e.target instanceof Node && menuRef.current?.contains(e.target)) return;
+      setMenu(null);
+    };
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [menu]);
+
+  useEffect(() => clearLongPress, []);
+
+  // 提示几秒后自动消失
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  const openMenu = (x: number, y: number, picture: PictureEntry) => {
+    // 菜单尺寸固定，靠近视口边缘时向内收，避免长按在屏幕角落时菜单被截断
+    const MENU_W = 180;
+    const MENU_H = 150;
+    const left = Math.max(8, Math.min(x, window.innerWidth - MENU_W - 8));
+    const top = Math.max(8, Math.min(y, window.innerHeight - MENU_H - 8));
+    suppressClickRef.current = true;
+    setMenu({ x: left, y: top, picture });
+  };
+
+  const handleMenuAction = async (action: 'edit' | 'reference' | 'background') => {
+    if (!menu) return;
+    const picture = menu.picture;
+    setMenu(null);
+    if (action === 'edit') {
+      const result = await editPictureFromMeta(picture);
+      setNotice(result.message);
+    } else if (action === 'reference') {
+      setPictureAsReference(picture);
+      setNotice(`已设为参考：${picture.fileName}`);
+    } else {
+      const ok = await setPictureAsBackground(picture);
+      setNotice(ok ? `已设为背景：${picture.fileName}` : '设为背景失败');
+    }
+  };
 
   // 绘制前恢复上次的滚动位置，避免闪烁
   useLayoutEffect(() => {
@@ -211,8 +280,31 @@ export default function PictureDrawer() {
                 <button
                   key={p.fileName}
                   className={`picture-item ${selected ? 'selected' : ''}`}
-                  onClick={() => togglePictureSelection(p)}
-                  title={selected ? `${p.fileName}（单击取消选中）` : `选中以替换：${p.fileName}`}
+                  onClick={() => {
+                    // 长按菜单已经把这次点击消费掉了，不再切换选中
+                    if (suppressClickRef.current) {
+                      suppressClickRef.current = false;
+                      return;
+                    }
+                    togglePictureSelection(p);
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    openMenu(e.clientX, e.clientY, p);
+                  }}
+                  onPointerDown={(e) => {
+                    // 触屏长按弹出菜单；鼠标用右键
+                    if (e.pointerType === 'mouse') return;
+                    clearLongPress();
+                    longPressTimerRef.current = window.setTimeout(() => {
+                      longPressTimerRef.current = null;
+                      openMenu(e.clientX, e.clientY, p);
+                    }, 500);
+                  }}
+                  onPointerMove={clearLongPress}
+                  onPointerUp={clearLongPress}
+                  onPointerCancel={clearLongPress}
+                  title={selected ? `${p.fileName}（单击取消选中，右键更多）` : `选中以替换：${p.fileName}`}
                   draggable
                   onDragStart={(e) => {
                     // 供【背景】页"参考已有"模式接收
@@ -238,6 +330,30 @@ export default function PictureDrawer() {
           </div>
         )}
       </div>
+      {menu && (
+        <div
+          ref={menuRef}
+          className="picture-menu"
+          style={{ left: menu.x, top: menu.y }}
+          role="menu"
+        >
+          <div className="picture-menu-title">{menu.picture.fileName}</div>
+          <button role="menuitem" onClick={() => handleMenuAction('edit')}>
+            编辑（读入参数）
+          </button>
+          <button role="menuitem" onClick={() => handleMenuAction('reference')}>
+            设为参考
+          </button>
+          <button role="menuitem" onClick={() => handleMenuAction('background')}>
+            设为背景
+          </button>
+        </div>
+      )}
+      {notice && (
+        <div className="picture-notice" onClick={() => setNotice(null)}>
+          {notice}
+        </div>
+      )}
     </aside>
   );
 }

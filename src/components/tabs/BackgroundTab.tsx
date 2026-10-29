@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { loadImage } from '../../engine/messageWindow';
-import { parsePalette0 } from '../../engine/transparentColorInference';
+import { dataUrlToBytes, parsePalette0 } from '../../engine/transparentColorInference';
 import { readPictureDataUrl } from '../../engine/workspace';
 import {
   RPG_CONSTANTS,
@@ -12,17 +12,8 @@ import {
 import SystemPicker, { type SystemPickerValue } from '../pickers/SystemPicker';
 import BackgroundFrameEditor, { type TileRect } from '../BackgroundFrameEditor';
 
-/** 将 data URL 解码为字节，用于解析图片格式与调色板 */
-function dataUrlToBytes(dataUrl: string): Uint8Array {
-  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
-  const bin = atob(base64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
 export default function BackgroundTab() {
-  const { config, updateConfig } = useStore();
+  const { config, updateConfig, applyReferenceBackground } = useStore();
   const [systemPickerOpen, setSystemPickerOpen] = useState(false);
   const [frameEditorOpen, setFrameEditorOpen] = useState(false);
   const [referenceDragOver, setReferenceDragOver] = useState(false);
@@ -56,24 +47,6 @@ export default function BackgroundTab() {
     }));
   };
 
-  /** 应用参考图片（上传与拖拽共用）：重置底纹推断区域，并按调色板初始化透明色 */
-  const applyReferenceImage = (img: HTMLImageElement, palette0: string | null) => {
-    updateConfig((c) => ({
-      ...c,
-      backgroundImage: img,
-      // 更换图片时，重置 tile rect 为"左上角角框右下角的 2×2"
-      backgroundImageTileRect: {
-        x: c.backgroundImageCornerThickness,
-        y: c.backgroundImageCornerThickness,
-        w: 2,
-        h: 2,
-      },
-      // 自动检测到调色板 idx-0 则默认启用透明色，否则不启用
-      backgroundImageTransparentColor: palette0,
-      backgroundImageUseTransparentColor: palette0 !== null,
-    }));
-  };
-
   const handleImageUpload = async (file: File) => {
     const url = URL.createObjectURL(file);
     const img = await loadImage(url);
@@ -87,7 +60,8 @@ export default function BackgroundTab() {
       // 解析失败，不使用透明色
     }
 
-    applyReferenceImage(img, palette0);
+    // 上传的文件来自工作区之外，不记录来源文件名
+    applyReferenceBackground(img, palette0, null);
   };
 
   const handleReferenceDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
@@ -125,7 +99,7 @@ export default function BackgroundTab() {
     } catch {
       // 解析失败，不使用透明色
     }
-    applyReferenceImage(img, palette0);
+    applyReferenceBackground(img, palette0, pic.fileName);
   };
 
   /** 角框边长；底纹框若吸附在左上角角框上则跟着移动 */

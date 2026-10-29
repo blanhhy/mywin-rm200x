@@ -13,6 +13,7 @@ import {
   recommendTransparentColor,
   recommendTransparentColorFromPicture,
 } from '../engine/pngExporter';
+import { buildPictureMeta, savePictureMeta } from '../engine/pictureMeta';
 
 /** 读取图片尺寸（用于覆盖时的尺寸校验） */
 function loadImageSize(dataUrl: string): Promise<{ w: number; h: number } | null> {
@@ -31,6 +32,7 @@ export default function Preview() {
   const selectedPicture = useStore((s) => s.selectedPicture);
   const overwritePictureToWorkspace = useStore((s) => s.overwritePictureToWorkspace);
   const refreshPictures = useStore((s) => s.refreshPictures);
+  const backgroundImageFileName = useStore((s) => s.backgroundImageFileName);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [transparentColor, setTransparentColor] = useState(recommendTransparentColor());
   /** 勾选后，预览把透明区域显示为透明色，而不是棋盘格下的真透明 */
@@ -224,6 +226,16 @@ export default function Preview() {
           ? await overwritePictureToWorkspace(selectedPicture.fileName, fileData)
           : await exportPNGToWorkspace(filename, fileData);
         if (savedName) {
+          // 参数与图片一起保存，供下次二次编辑时读回
+          try {
+            await savePictureMeta(
+              workspace,
+              savedName,
+              buildPictureMeta(config, backgroundImageFileName),
+            );
+          } catch {
+            // 参数写入失败不影响图片本身
+          }
           setExportError(false);
           setExportMsg(
             selectedPicture

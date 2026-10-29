@@ -941,6 +941,78 @@ async function overwriteVirtualPicture(
 }
 
 /**
+ * 按文件名读取 Picture 目录中的图片（文件可能已不存在，返回 null）
+ */
+export async function readPictureDataUrlByName(
+  workspace: Workspace,
+  fileName: string,
+): Promise<string | null> {
+  try {
+    if (workspace.mode === 'virtual') {
+      const files = await listVirtualFiles('Picture/');
+      return files.find((f) => f.key === `Picture/${fileName}`)?.dataUrl ?? null;
+    }
+    if (!workspace.handle) return null;
+    const dir = await getPictureDir(workspace);
+    const fileHandle = await dir.getFileHandle(fileName);
+    return await fileHandleToDataUrl(fileHandle);
+  } catch {
+    return null;
+  }
+}
+
+/** Picture 目录下存放图片参数的隐藏子目录 */
+const PICTURE_META_DIR = '.mywin';
+
+function pictureMetaKey(fileName: string): string {
+  return `Picture/${PICTURE_META_DIR}/${fileName}.json`;
+}
+
+/** 参数文件写入（与图片同名的 .json） */
+export async function writePictureMetaFile(
+  workspace: Workspace,
+  fileName: string,
+  json: string,
+): Promise<void> {
+  if (workspace.mode === 'virtual') {
+    await storeVirtualFile(pictureMetaKey(fileName), {
+      name: `${fileName}.json`,
+      dataUrl: `data:application/json;charset=utf-8,${encodeURIComponent(json)}`,
+    });
+    return;
+  }
+  if (!workspace.handle) throw new Error('工作区句柄不可用');
+  const metaDir = await (await getPictureDir(workspace)).getDirectoryHandle(PICTURE_META_DIR, {
+    create: true,
+  });
+  const fileHandle = await metaDir.getFileHandle(`${fileName}.json`, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(json);
+  await writable.close();
+}
+
+/** 读取参数文件内容（不存在时返回 null） */
+export async function readPictureMetaFile(
+  workspace: Workspace,
+  fileName: string,
+): Promise<string | null> {
+  try {
+    if (workspace.mode === 'virtual') {
+      const files = await listVirtualFiles(`Picture/${PICTURE_META_DIR}/`);
+      const hit = files.find((f) => f.key === pictureMetaKey(fileName));
+      if (!hit) return null;
+      return decodeURIComponent(hit.dataUrl.slice(hit.dataUrl.indexOf(',') + 1));
+    }
+    if (!workspace.handle) return null;
+    const metaDir = await (await getPictureDir(workspace)).getDirectoryHandle(PICTURE_META_DIR);
+    const fileHandle = await metaDir.getFileHandle(`${fileName}.json`);
+    return await (await fileHandle.getFile()).text();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 请求工作区写权限（仅 filesystem 模式需要）
  */
 export async function requestWorkspacePermission(

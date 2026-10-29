@@ -7,6 +7,7 @@ import {
   type MessageWindowConfig,
   type Padding,
   type CustomFontEntry,
+  type LoadedImage,
 } from '../types';
 import {
   setWorkspaceAssets,
@@ -15,6 +16,8 @@ import {
   type AssetEntry,
 } from '../engine/assetLoader';
 import { loadImage } from '../engine/messageWindow';
+import { dataUrlToBytes, parsePalette0 } from '../engine/transparentColorInference';
+import { buildConfigFromMeta, readPictureMeta } from '../engine/pictureMeta';
 import {
   openWorkspace,
   closeWorkspace as closeWorkspaceDir,
@@ -54,6 +57,8 @@ interface StoreState {
   drawerOpen: boolean;
   pictures: PictureEntry[];
   selectedPicture: PictureEntry | null;
+  /** 背景参考图片的来源文件名（来自工作区 Picture 时记录，用于随图保存参数） */
+  backgroundImageFileName: string | null;
 
   updateConfig: (updater: (config: MessageWindowConfig) => MessageWindowConfig) => void;
   patchConfig: (partial: Partial<MessageWindowConfig>) => void;
@@ -89,6 +94,18 @@ interface StoreState {
   refreshPictures: () => Promise<void>;
   togglePictureSelection: (p: PictureEntry) => void;
   overwritePictureToWorkspace: (fileName: string, pngData: Uint8Array) => Promise<string | null>;
+  /** 应用背景参考图片（上传为 null 文件名，图库拖入/右键设为背景为图片文件名） */
+  applyReferenceBackground: (
+    image: LoadedImage,
+    palette0: string | null,
+    fileName: string | null,
+  ) => void;
+  /** 仅把图片设为参考（对照/覆盖目标） */
+  setPictureAsReference: (p: PictureEntry) => void;
+  /** 把图库图片设为背景参考 */
+  setPictureAsBackground: (p: PictureEntry) => Promise<boolean>;
+  /** 读入图片随图保存的参数并设为参考 */
+  editPictureFromMeta: (p: PictureEntry) => Promise<{ ok: boolean; message: string }>;
 }
 
 const savedTheme = (typeof localStorage !== 'undefined' && localStorage.getItem('mywin-theme')) as 'dark' | 'light' | null;
@@ -177,6 +194,7 @@ export const useStore = create<StoreState>((set, get) => ({
   drawerOpen: false,
   pictures: [],
   selectedPicture: null,
+  backgroundImageFileName: null,
 
   updateConfig: (updater) =>
     set((state) => ({
@@ -438,6 +456,76 @@ export const useStore = create<StoreState>((set, get) => ({
     } catch (e) {
       set({ workspaceError: String(e) || '覆盖图片失败' });
       return null;
+    }
+  },
+
+  applyReferenceBackground: (image, palette0, fileName) => {
+    set((s) => ({
+      backgroundImageFileName: fileName,
+      config: {
+        ...s.config,
+        backgroundImage: image,
+        // 更换图片时，重置 tile rect 为"左上角角框右下角的 2×2"
+        backgroundImageTileRect: {
+          x: s.config.backgroundImageCornerThickness,
+          y: s.config.backgroundImageCornerThickness,
+          w: 2,
+          h: 2,
+        },
+        // 自动检测到调色板 idx-0 则默认启用透明色，否则不启用
+        backgroundImageTransparentColor: palette0,
+        backgroundImageUseTransparentColor: palette0 !== null,
+      },
+    }));
+  },
+
+  setPictureAsReference: (p) => {
+    set({ selectedPicture: p });
+    syncFollowTargetSize(p, get, set);
+  },
+
+  setPictureAsBackground: async (p) => {
+    const { workspace } = get();
+    if (!workspace) return false;
+    try {
+      const dataUrl = await readPictureDataUrl(workspace, p);
+      const img = await loadImage(dataUrl);
+      let palette0: string | null = null;
+      try {
+        palette0 = parsePalette0(dataUrlToBytes(dataUrl));
+      } catch {
+        // 解析失败时不启用透明色
+      }
+      get().applyReferenceBackground(img, palette0, p.fileName);
+      set((s) => ({ config: { ...s.config, backgroundMode: 'image' } }));
+      return true;
+    } catch (e) {
+      set({ workspaceError: String(e) || '读取图片失败' });
+      return false;
+    }
+  },
+
+  editPictureFromMeta: async (p) => {
+    const { workspace } = get();
+    if (!workspace) return { ok: false, message: '未打开工作区' };
+    const meta = await readPictureMeta(workspace, p.fileName);
+    if (!meta) return { ok: false, message: '该图片没有保存参数' };
+    try {
+      const restored = await buildConfigFromMeta(meta, workspace);
+      set((s) => ({
+        config: { ...s.config, ...restored.config },
+        selectedPicture: p,
+        backgroundImageFileName: restored.backgroundImageFileName,
+      }));
+      return {
+        ok: true,
+        message:
+          restored.warnings.length > 0
+            ? `已读入参数，但${restored.warnings.join('；')}`
+            : '已读入参数',
+      };
+    } catch (e) {
+      return { ok: false, message: `读入参数失败：${e}` };
     }
   },
 }));
