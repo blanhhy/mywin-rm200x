@@ -86,24 +86,11 @@ export default function Preview() {
     };
   }, [selectedPicture, workspace]);
 
-  // 覆盖写模式：加载目标图片作为参考图（供 \r / \p 取像素）
+  // 覆盖写模式：目标图片的 <img> 加载完成后直接作为参考图（供 \r / \p 取像素），
+  // 不再额外解码一次
   useEffect(() => {
-    if (!selectedPicture || !pictureDataUrl) {
-      setReferenceImage(null);
-      return;
-    }
-    let cancelled = false;
-    loadImage(pictureDataUrl)
-      .then((img) => {
-        if (!cancelled) setReferenceImage(img);
-      })
-      .catch(() => {
-        if (!cancelled) setReferenceImage(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedPicture, pictureDataUrl]);
+    if (!pictureDataUrl) setReferenceImage(null);
+  }, [pictureDataUrl]);
 
   // 实时渲染
   useEffect(() => {
@@ -427,6 +414,7 @@ export default function Preview() {
                 onLoad={(e) => {
                   const img = e.currentTarget;
                   setCompareDims({ w: img.naturalWidth, h: img.naturalHeight });
+                  setReferenceImage(img);
                 }}
               />
             ) : (
