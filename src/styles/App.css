@@ -547,7 +547,9 @@
 }
 
 .canvas-wrapper {
-  padding: 12px;
+  /* 不设内边距：图像边缘直接贴合容器，避免四周多出一圈透明/棋盘格 */
+  padding: 0;
+  line-height: 0;
   background-color: var(--checker-bg);
   background-image:
     linear-gradient(45deg, var(--checker-cell) 25%, transparent 25%),
@@ -559,6 +561,12 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   display: inline-block;
+  vertical-align: top;
+}
+
+.canvas-wrapper > canvas,
+.canvas-wrapper > img {
+  display: block;
 }
 
 .color-palette {
