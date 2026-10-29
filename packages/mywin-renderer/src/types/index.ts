@@ -160,7 +160,7 @@ export interface MessageWindowConfig {
   backgroundImageTransparentColor: string | null;
   backgroundStretch: StretchMode; // 默认 'stretch'
 
-  // === 脸图设置（左右各一份，目前互斥启用） ===
+  // === 脸图设置（左右各一份，可同时启用） ===
   faceLeft: FaceSlot;
   faceRight: FaceSlot;
 

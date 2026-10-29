@@ -23,13 +23,9 @@ export default function FaceTab() {
     );
   };
 
-  // 左右脸图目前互斥：启用一侧时关闭另一侧
+  // 左右脸图各自独立启用，可同时开启
   const toggleEnabled = (side: FaceSide, enabled: boolean) => {
-    updateConfig((c) => ({
-      ...c,
-      faceLeft: { ...c.faceLeft, enabled: side === 'left' ? enabled : false },
-      faceRight: { ...c.faceRight, enabled: side === 'right' ? enabled : false },
-    }));
+    updateSlot(side, { enabled });
   };
 
   const handleFaceSetApply = (value: FaceSetPickerValue) => {
