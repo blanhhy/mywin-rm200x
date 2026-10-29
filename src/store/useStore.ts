@@ -74,6 +74,8 @@ interface StoreState {
   closeWorkspace: () => Promise<void>;
   /** 从最近列表重新打开一个工作区（filesystem 模式） */
   openRecentWorkspace: (entry: RecentWorkspace) => Promise<void>;
+  /** 从最近列表移除一条记录（不影响已打开的工作区） */
+  forgetRecentWorkspace: (entry: RecentWorkspace) => Promise<void>;
   saveAssetToWorkspace: (category: AssetCategory, file: File) => Promise<AssetEntry | null>;
   removeAssetFromWorkspace: (category: AssetCategory, name: string) => Promise<boolean>;
   exportPNGToWorkspace: (filename: string, pngData: Uint8Array) => Promise<string | null>;
@@ -331,6 +333,11 @@ export const useStore = create<StoreState>((set, get) => ({
       set({ workspaceLoading: false });
       await loadRecentsInto(set);
     }
+  },
+
+  forgetRecentWorkspace: async (entry) => {
+    await removeRecentWorkspace(entry.handle);
+    await loadRecentsInto(set);
   },
 
   closeWorkspace: async () => {

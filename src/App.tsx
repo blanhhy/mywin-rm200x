@@ -19,6 +19,7 @@ function WorkspaceSelector() {
     recentWorkspaces,
     openWorkspace,
     openRecentWorkspace,
+    forgetRecentWorkspace,
     closeWorkspace,
     isFileSystemSupported,
   } = useStore();
@@ -40,17 +41,30 @@ function WorkspaceSelector() {
     <div className="workspace-recent">
       <div className="workspace-recent-title">最近打开</div>
       {recentWorkspaces.map((r, i) => (
-        <button
+        <div
           key={`${r.name}-${i}`}
           className={`workspace-recent-item ${workspace?.name === r.name ? 'current' : ''}`}
-          onClick={async () => {
-            setMenuOpen(false);
-            await openRecentWorkspace(r);
-          }}
-          title={`重新打开 ${r.name}`}
         >
-          <span className="workspace-recent-name">{r.name}</span>
-        </button>
+          <button
+            type="button"
+            className="workspace-recent-open"
+            onClick={async () => {
+              setMenuOpen(false);
+              await openRecentWorkspace(r);
+            }}
+            title={`重新打开 ${r.name}`}
+          >
+            <span className="workspace-recent-name">{r.name}</span>
+          </button>
+          <button
+            type="button"
+            className="workspace-recent-remove"
+            onClick={() => void forgetRecentWorkspace(r)}
+            title="从最近列表移除"
+          >
+            ×
+          </button>
+        </div>
       ))}
     </div>
   );
