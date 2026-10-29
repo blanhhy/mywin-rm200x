@@ -4,7 +4,7 @@
 // Picture 目录可能有上万张图，桌面端与移动端策略不同：
 //   桌面（读取快）：一次渲染全部条目，缩略图在后台异步逐个读取（并发 8）
 //   移动（SAF 单次读取几百毫秒）：列表分批渲染，缩略图滚到可见区域才读取
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
 import {
   isMobileBrowser,
@@ -152,6 +152,14 @@ export default function PictureDrawer() {
   const [visibleCount, setVisibleCount] = useState(
     IS_MOBILE ? PICTURE_PAGE_SIZE : Number.MAX_SAFE_INTEGER,
   );
+  /** 搜索框内容（回车/点搜索按钮才生效，不实时筛选） */
+  const [queryInput, setQueryInput] = useState('');
+  /** 已生效的搜索词 */
+  const [query, setQuery] = useState('');
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? pictures.filter((p) => p.fileName.toLowerCase().includes(q)) : pictures;
+  }, [pictures, query]);
 
   /** 右键 / 长按菜单 */
   const [menu, setMenu] = useState<{ x: number; y: number; picture: PictureEntry } | null>(null);
@@ -229,10 +237,30 @@ export default function PictureDrawer() {
     body.scrollTop = savedScroll.scrollTop;
   }, [workspace]);
 
-  // 列表刷新后从头分批展示（移动端）
+  // 列表刷新或筛选条件变化后从头分批展示（移动端）
   useEffect(() => {
     if (IS_MOBILE) setVisibleCount(PICTURE_PAGE_SIZE);
-  }, [pictures]);
+  }, [pictures, query]);
+
+  // 筛选条件变化时回到列表顶部（结果与原来的滚动位置无关）
+  const scrollToTop = () => {
+    const body = bodyRef.current;
+    if (body) {
+      body.scrollTop = 0;
+      savedScroll = { workspace, scrollTop: 0 };
+    }
+  };
+
+  const applySearch = () => {
+    setQuery(queryInput);
+    scrollToTop();
+  };
+
+  const clearSearch = () => {
+    setQueryInput('');
+    setQuery('');
+    scrollToTop();
+  };
 
   const handleScroll = () => {
     const body = bodyRef.current;
@@ -241,40 +269,109 @@ export default function PictureDrawer() {
     if (
       IS_MOBILE &&
       body &&
-      visibleCount < pictures.length &&
+      visibleCount < filtered.length &&
       body.scrollTop + body.clientHeight >= body.scrollHeight - 400
     ) {
-      setVisibleCount((n) => Math.min(n + PICTURE_PAGE_SIZE, pictures.length));
+      setVisibleCount((n) => Math.min(n + PICTURE_PAGE_SIZE, filtered.length));
     }
   };
 
   return (
     <aside className="picture-drawer">
       <div className="picture-drawer-header">
-        <span className="picture-drawer-title">Picture</span>
-        <span className="picture-drawer-count">
-          {visibleCount < pictures.length
-            ? `${visibleCount} / ${pictures.length} 张`
-            : `${pictures.length} 张`}
-        </span>
-        <button
-          className="picture-refresh-btn"
-          onClick={() => refreshPictures()}
-          title="刷新列表"
+        <div className="picture-drawer-titlebar">
+          <span className="picture-drawer-title">Picture</span>
+          <span className="picture-drawer-count">
+            {query.trim()
+              ? `${filtered.length} 张`
+              : visibleCount < pictures.length
+                ? `${visibleCount} / ${pictures.length} 张`
+                : `${pictures.length} 张`}
+          </span>
+          <div className="picture-drawer-actions">
+            <button
+              className="picture-refresh-btn"
+              onClick={clearSearch}
+              disabled={!query && !queryInput}
+              title="清除搜索"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3 6h18M3 12h9M3 18h9" />
+                <path d="M15 12l6 6 M21 12l-6 6" />
+              </svg>
+            </button>
+            <button
+              className="picture-refresh-btn"
+              onClick={() => refreshPictures()}
+              title="刷新列表"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M17.66 6.34A8 8 0 1 1 12 4" />
+                <path d="M9.12 2.6L12 4l-1.88 2.59" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <form
+          className="picture-search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            applySearch();
+          }}
         >
-          ⟳
-        </button>
+          <input
+            className="picture-search-input"
+            type="text"
+            placeholder="搜索图片名称..."
+            value={queryInput}
+            onChange={(e) => setQueryInput(e.target.value)}
+          />
+          <button className="picture-search-btn" type="submit" title="搜索">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="M15.2 15.2L20 20" />
+            </svg>
+          </button>
+        </form>
       </div>
       <div className="picture-drawer-body" ref={bodyRef} onScroll={handleScroll}>
-        <p className="picture-drawer-hint">
-          单击选中 Picture 目录中的图片，再次单击取消选中。<br />
-          选中后保存将<b>覆盖</b>该图片。
-        </p>
         {pictures.length === 0 ? (
           <div className="picture-empty">没有图片</div>
+        ) : filtered.length === 0 ? (
+          <div className="picture-empty">没有匹配的图片</div>
         ) : (
           <div className="picture-grid">
-            {pictures.slice(0, visibleCount).map((p) => {
+            {filtered.slice(0, visibleCount).map((p) => {
               const selected = selectedPicture?.fileName === p.fileName;
               return (
                 <button
