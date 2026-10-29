@@ -127,7 +127,10 @@ function drawFace(
   config: MessageWindowConfig,
   contentX: number,
   contentY: number,
+  available: boolean,
 ): void {
+  // 非标准窗口（实际尺寸不是 320×80）时脸图不可用，与 UI 的禁用条件保持一致
+  if (!available) return;
   drawFaceSlot(ctx, config.faceLeft, 'left', contentX, contentY);
   drawFaceSlot(ctx, config.faceRight, 'right', contentX, contentY);
 }
@@ -192,7 +195,9 @@ function drawFaceSlot(
 /**
  * 计算文字起始 x（contents 内）
  */
-function getTextStartX(config: MessageWindowConfig): number {
+function getTextStartX(config: MessageWindowConfig, facesAvailable: boolean): number {
+  // 脸图不可用时也不预留脸图宽度，文字从内容区左边缘开始
+  if (!facesAvailable) return 0;
   if (!config.faceLeft.enabled) return 0;
   return RPG_CONSTANTS.FACE_LEFT_MARGIN + RPG_CONSTANTS.FACE_SIZE + RPG_CONSTANTS.FACE_RIGHT_MARGIN;
 }
@@ -232,7 +237,10 @@ export function renderMessageWindow(
   const contentY = padding.top;
 
   // 4. 绘制脸图
-  drawFace(ctx, config, contentX, contentY);
+  // 脸图仅在窗口实际尺寸等于 RPG 标准 320×80 时可用（与脸图页的禁用判定一致）
+  const facesAvailable =
+    width === RPG_CONSTANTS.MESSAGE_BOX_WIDTH && height === RPG_CONSTANTS.MESSAGE_BOX_HEIGHT;
+  drawFace(ctx, config, contentX, contentY, facesAvailable);
 
   // 5. 绘制文字
   const fillRegions: FillRegion[] = [];
@@ -249,7 +257,7 @@ export function renderMessageWindow(
       }
     : null;
 
-  const textX = contentX + getTextStartX(config);
+  const textX = contentX + getTextStartX(config, facesAvailable);
   const textY = contentY;
 
   if (config.customFont.family) {
