@@ -89,6 +89,42 @@ export interface FaceSlot {
 }
 
 /**
+ * 便捷构造：把 RPG 原生的「单一脸图（左或右）」语义映射到双槽结构。
+ *
+ * 左右同时启用是本工具的扩展能力；只使用一侧时，用这个函数可以避免
+ * 手写两份槽位对象（另一侧自动为空且未启用）。
+ */
+export function createSingleFaceSlots(options: {
+  /** 脸图显示在左侧还是右侧 */
+  position: 'left' | 'right';
+  faceSet?: FaceSetRef;
+  /** 脸图编号 0-15 */
+  faceIndex?: number;
+  flipX?: boolean;
+  flipY?: boolean;
+  /** 是否启用；默认 FaceSet 已加载图像时启用 */
+  enabled?: boolean;
+}): { faceLeft: FaceSlot; faceRight: FaceSlot } {
+  const slot: FaceSlot = {
+    enabled: options.enabled ?? Boolean(options.faceSet?.image),
+    faceSet: options.faceSet ?? { name: null, image: null },
+    faceIndex: options.faceIndex ?? 0,
+    flipX: options.flipX ?? false,
+    flipY: options.flipY ?? false,
+  };
+  const empty: FaceSlot = {
+    enabled: false,
+    faceSet: { name: null, image: null },
+    faceIndex: 0,
+    flipX: false,
+    flipY: false,
+  };
+  return options.position === 'left'
+    ? { faceLeft: slot, faceRight: empty }
+    : { faceLeft: empty, faceRight: slot };
+}
+
+/**
  * 自定义字体设置
  *
  * family 为 null 时表示未使用自定义字体，改用内置 12px 位图字体。
