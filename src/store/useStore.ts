@@ -30,6 +30,7 @@ import {
   listWorkspacePictures,
   readPictureDataUrl,
   overwritePictureInWorkspace,
+  deletePictureFromWorkspace,
   saveHandle as saveWorkspaceHandle,
   addRecentWorkspace,
   listRecentWorkspaces,
@@ -111,6 +112,13 @@ interface StoreState {
   setPictureAsBackground: (p: PictureEntry) => Promise<boolean>;
   /** 读入图片随图保存的参数并设为参考 */
   editPictureFromMeta: (p: PictureEntry) => Promise<{ ok: boolean; message: string }>;
+  /** 检查图片参数能否读入（不修改配置） */
+  checkPictureMeta: (p: PictureEntry) => Promise<{ ok: boolean; message: string }>;
+  /**
+   * 删除图库图片（连同随图保存的参数）
+   * @param restoreParams 删除前先把它保存的参数应用到编辑器
+   */
+  deletePicture: (p: PictureEntry, restoreParams: boolean) => Promise<{ ok: boolean; message: string }>;
 }
 
 const savedTheme = (typeof localStorage !== 'undefined' && localStorage.getItem('mywin-theme')) as 'dark' | 'light' | null;
@@ -546,6 +554,39 @@ export const useStore = create<StoreState>((set, get) => ({
       };
     } catch (e) {
       return { ok: false, message: '读取参数失败' };
+    }
+  },
+
+  checkPictureMeta: async (p) => {
+    const { workspace } = get();
+    if (!workspace) return { ok: false, message: '未打开工作区' };
+    const meta = await readPictureMeta(workspace, p.fileName);
+    if (!meta) return { ok: false, message: '不是由 mywin 创建的图片' };
+    try {
+      // 只试读一遍（加载素材、字体），不写入任何配置
+      await buildConfigFromMeta(meta, workspace);
+      return { ok: true, message: '' };
+    } catch {
+      return { ok: false, message: '读取参数失败' };
+    }
+  },
+
+  deletePicture: async (p, restoreParams) => {
+    const { workspace } = get();
+    if (!workspace) return { ok: false, message: '未打开工作区' };
+    // 撤回参数失败时先不删，避免参数随图片一起丢失
+    if (restoreParams) {
+      const restored = await get().editPictureFromMeta(p);
+      if (!restored.ok) return restored;
+    }
+    try {
+      const ok = await deletePictureFromWorkspace(workspace, p.fileName);
+      if (!ok) return { ok: false, message: '删除失败' };
+      if (get().selectedPicture?.fileName === p.fileName) set({ selectedPicture: null });
+      await get().refreshPictures();
+      return { ok: true, message: '' };
+    } catch {
+      return { ok: false, message: '删除失败' };
     }
   },
 }));

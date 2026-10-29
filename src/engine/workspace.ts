@@ -1013,6 +1013,31 @@ export async function readPictureMetaFile(
 }
 
 /**
+ * 删除 Picture 目录中的一张图片，并一并删除它随图保存的参数文件
+ */
+export async function deletePictureFromWorkspace(
+  workspace: Workspace,
+  fileName: string,
+): Promise<boolean> {
+  if (workspace.mode === 'virtual') {
+    await deleteVirtualFile(`Picture/${fileName}`);
+    await deleteVirtualFile(pictureMetaKey(fileName));
+    return true;
+  }
+  if (!workspace.handle) return false;
+  const dir = await getPictureDir(workspace);
+  await dir.removeEntry(fileName);
+  try {
+    // 参数文件可能本来就不存在
+    const metaDir = await dir.getDirectoryHandle(PICTURE_META_DIR);
+    await metaDir.removeEntry(`${fileName}.json`);
+  } catch {
+    // 没有参数文件，忽略
+  }
+  return true;
+}
+
+/**
  * 请求工作区写权限（仅 filesystem 模式需要）
  */
 export async function requestWorkspacePermission(

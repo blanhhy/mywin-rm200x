@@ -190,6 +190,14 @@ export async function savePictureMeta(
   await writePictureMetaFile(workspace, fileName, JSON.stringify(meta));
 }
 
+/** 该图片是否有随图保存的参数（用于删除前确认是否一并清除） */
+export async function pictureMetaExists(
+  workspace: Workspace,
+  fileName: string,
+): Promise<boolean> {
+  return (await readPictureMetaFile(workspace, fileName)) !== null;
+}
+
 /** 读取参数文件，不存在或格式不符返回 null */
 export async function readPictureMeta(
   workspace: Workspace,

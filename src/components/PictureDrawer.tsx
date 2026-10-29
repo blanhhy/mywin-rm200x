@@ -6,6 +6,8 @@
 //   移动（SAF 单次读取几百毫秒）：列表分批渲染，缩略图滚到可见区域才读取
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
+import { pictureMetaExists } from '../engine/pictureMeta';
+import Modal from './Modal';
 import {
   isMobileBrowser,
   readPictureDataUrl,
@@ -147,6 +149,8 @@ export default function PictureDrawer() {
   const editPictureFromMeta = useStore((s) => s.editPictureFromMeta);
   const setPictureAsReference = useStore((s) => s.setPictureAsReference);
   const setPictureAsBackground = useStore((s) => s.setPictureAsBackground);
+  const checkPictureMeta = useStore((s) => s.checkPictureMeta);
+  const deletePicture = useStore((s) => s.deletePicture);
   const bodyRef = useRef<HTMLDivElement>(null);
   // 桌面端不截断：visibleCount 足够大即可一次渲染全部
   const [visibleCount, setVisibleCount] = useState(
@@ -163,6 +167,16 @@ export default function PictureDrawer() {
 
   /** 右键 / 长按菜单 */
   const [menu, setMenu] = useState<{ x: number; y: number; picture: PictureEntry } | null>(null);
+  /** 删除确认弹窗的目标（hasMeta 决定是否显示“撤回到编辑器”） */
+  const [deleteTarget, setDeleteTarget] = useState<{
+    picture: PictureEntry;
+    hasMeta: boolean;
+  } | null>(null);
+  /** 删除前是否先把参数应用回编辑器 */
+  const [restoreParams, setRestoreParams] = useState(false);
+  /** 勾选撤回时正在读取参数 */
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   /** 操作结果提示 */
   const [notice, setNotice] = useState<string | null>(null);
   /** 长按已弹出菜单时，随后的 click 不应触发选中切换 */
@@ -211,7 +225,9 @@ export default function PictureDrawer() {
     setMenu({ x: left, y: top, picture });
   };
 
-  const handleMenuAction = async (action: 'edit' | 'reference' | 'background') => {
+  const handleMenuAction = async (
+    action: 'edit' | 'reference' | 'background' | 'delete',
+  ) => {
     if (!menu) return;
     const picture = menu.picture;
     setMenu(null);
@@ -221,10 +237,43 @@ export default function PictureDrawer() {
       if (result.message) setNotice(result.message);
     } else if (action === 'reference') {
       setPictureAsReference(picture);
-    } else {
+    } else if (action === 'background') {
       const ok = await setPictureAsBackground(picture);
       if (!ok) setNotice(`无法读取 ${picture.fileName}，无法设为背景`);
+    } else {
+      const hasMeta = workspace ? await pictureMetaExists(workspace, picture.fileName) : false;
+      setRestoreParams(false);
+      setDeleteTarget({ picture, hasMeta });
     }
+  };
+
+  // 勾选时只检查参数能否读入；读不出来则自动取消勾选并提示
+  const handleRestoreToggle = async (checked: boolean) => {
+    if (!deleteTarget) return;
+    if (!checked) {
+      setRestoreParams(false);
+      return;
+    }
+    setRestoreParams(true);
+    setRestoreBusy(true);
+    const result = await checkPictureMeta(deleteTarget.picture);
+    setRestoreBusy(false);
+    if (!result.ok) {
+      setRestoreParams(false);
+      setNotice(result.message);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    const result = await deletePicture(
+      deleteTarget.picture,
+      restoreParams && deleteTarget.hasMeta,
+    );
+    setDeleteBusy(false);
+    setDeleteTarget(null);
+    if (result.message) setNotice(result.message);
   };
 
   // 绘制前恢复上次的滚动位置，避免闪烁
@@ -442,8 +491,51 @@ export default function PictureDrawer() {
           <button role="menuitem" onClick={() => handleMenuAction('background')}>
             设为背景
           </button>
+          <button role="menuitem" onClick={() => handleMenuAction('delete')}>
+            删除图片
+          </button>
         </div>
       )}
+      <Modal
+        open={deleteTarget !== null}
+        title="删除图片"
+        onClose={() => setDeleteTarget(null)}
+        width={420}
+        footer={
+          <>
+            <button className="modal-btn" onClick={() => setDeleteTarget(null)}>
+              取消
+            </button>
+            <button
+              className="modal-btn danger-solid"
+              onClick={confirmDelete}
+              disabled={deleteBusy || restoreBusy}
+            >
+              删除
+            </button>
+          </>
+        }
+      >
+        <div className="delete-picture-body">
+          <p>
+            确定删除 <strong>{deleteTarget?.picture.fileName}</strong> 吗？删除后无法恢复。
+          </p>
+          {deleteTarget?.hasMeta && (
+            <>
+              <p>这张图片带有 mywin 保存的创建参数，删除图片时会一并清除参数。</p>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={restoreParams}
+                  disabled={restoreBusy}
+                  onChange={(e) => handleRestoreToggle(e.target.checked)}
+                />
+                撤回到 mywin 编辑器（删除前先应用它的参数）
+              </label>
+            </>
+          )}
+        </div>
+      </Modal>
       {notice && (
         <div className="picture-notice" onClick={() => setNotice(null)}>
           {notice}

@@ -1133,6 +1133,29 @@
   color: var(--color-danger);
 }
 
+/* 破坏性操作的实心红按钮 */
+.modal-btn.danger-solid {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: #fff;
+}
+
+.modal-btn.danger-solid:hover {
+  background: var(--color-danger-dim);
+  border-color: var(--color-danger-dim);
+}
+
+.delete-picture-body p {
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+.delete-picture-body strong {
+  color: var(--color-text);
+}
+
 .modal-btn.danger:hover {
   background: var(--color-danger-dim);
 }
@@ -1866,7 +1889,8 @@
   left: 50%;
   bottom: 28px;
   transform: translateX(-50%);
-  z-index: 95;
+  /* 高于模态框遮罩：删除弹窗内读取参数失败时也要能看到提示 */
+  z-index: 120;
   max-width: 80vw;
   padding: 8px 14px;
   background: var(--color-bg-elev-2);
