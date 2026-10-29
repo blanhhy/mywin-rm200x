@@ -14,9 +14,6 @@ import {
   recommendTransparentColorFromPicture,
 } from '../engine/pngExporter';
 
-/** 移动端基础缩放系数：让标准 320px 窗口在 1x 下适配约 360px CSS 宽屏幕 */
-const MOBILE_BASE_SCALE = 0.94;
-
 /** 读取图片尺寸（用于覆盖时的尺寸校验） */
 function loadImageSize(dataUrl: string): Promise<{ w: number; h: number } | null> {
   return new Promise((resolve) => {
@@ -25,24 +22,6 @@ function loadImageSize(dataUrl: string): Promise<{ w: number; h: number } | null
     img.onerror = () => resolve(null);
     img.src = dataUrl;
   });
-}
-
-function useIsMobile(): boolean {
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined'
-      ? window.matchMedia('(max-width: 899px)').matches
-      : false,
-  );
-
-  useEffect(() => {
-    const mql = window.matchMedia('(max-width: 899px)');
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    setIsMobile(mql.matches);
-    mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
-  }, []);
-
-  return isMobile;
 }
 
 export default function Preview() {
@@ -79,7 +58,6 @@ export default function Preview() {
   const [nameExt, setNameExt] = useState<'png' | 'bmp'>('png');
   const [nameError, setNameError] = useState<string | null>(null);
   const [nameChecking, setNameChecking] = useState(false);
-  const isMobile = useIsMobile();
 
   // 切换对照图片时重置尺寸缓存
   useEffect(() => {
@@ -161,10 +139,6 @@ export default function Preview() {
   }, [selectedPicture, pictureDataUrl]);
 
   const { width, height } = useMemo(() => computeWindowSize(config), [config]);
-
-  // 移动端仅在 1× 时缩小一点，让标准 320px 窗口在窄屏上完整显示；
-  // 2× 及以上保持所选倍率精确
-  const displayScale = isMobile && zoom === 1 ? MOBILE_BASE_SCALE : zoom;
 
   // 配色列表（用于展示）
   const colors = useMemo(() => {
@@ -349,8 +323,8 @@ export default function Preview() {
           width={width}
           height={height}
           style={{
-            width: width * displayScale,
-            height: height * displayScale,
+            width: width * zoom,
+            height: height * zoom,
             imageRendering: 'pixelated',
           }}
         />
@@ -432,8 +406,8 @@ export default function Preview() {
                 style={
                   compareDims
                     ? {
-                        width: compareDims.w * displayScale,
-                        height: compareDims.h * displayScale,
+                        width: compareDims.w * zoom,
+                        height: compareDims.h * zoom,
                         imageRendering: 'pixelated',
                       }
                     : { imageRendering: 'pixelated' }
