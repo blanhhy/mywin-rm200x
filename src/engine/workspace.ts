@@ -39,11 +39,6 @@ const VIRTUAL_META_STORE = 'virtual-meta';
 const VIRTUAL_FILES_STORE = 'virtual-files';
 const VIRTUAL_META_KEY = 'meta';
 
-const REQUIRED_DIRS = ['System', 'FaceSet', 'Picture'] as const;
-
-/** 工作区素材并发读取数（移动端 SAF 单次读取较慢，适度并发能明显缩短等待） */
-const ASSET_READ_CONCURRENCY = 8;
-
 // === IndexedDB 持久化（共用） ===
 
 function openDB(): Promise<IDBDatabase> {
@@ -266,39 +261,41 @@ async function listVirtualFiles(
 
 // === 辅助函数 ===
 
-async function ensureDir(
-  root: FileSystemDirectoryHandle,
+/** 查找子目录，不存在时返回 null（其它错误照常抛出） */
+async function findDir(
+  parent: FileSystemDirectoryHandle,
   name: string,
-): Promise<FileSystemDirectoryHandle> {
-  return root.getDirectoryHandle(name, { create: true });
+): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    return await parent.getDirectoryHandle(name);
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'NotFoundError') return null;
+    throw e;
+  }
 }
 
 /**
- * 并发执行并限制同时在跑的任务数
- * 单个失败不会中断整体，对应位置返回 null
+ * 取子目录，确实不存在时才创建
+ *
+ * 不能直接把 { create: true } 交给浏览器：Android 上的 Chromium（Chrome / Edge）
+ * 在查找失败时会真的去新建同名目录，系统把重名目录改叫「System (1)」，
+ * 随后又因为拿到的名字对不上抛 NotFoundError。结果是每次打开工作区
+ * 都会往工程目录里塞一个空的「System (n)」，而工作区仍然读不出来。
  */
-async function mapLimited<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-): Promise<(R | null)[]> {
-  const results: (R | null)[] = new Array(items.length).fill(null);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    for (;;) {
-      const i = next++;
-      if (i >= items.length) return;
-      try {
-        results[i] = await fn(items[i]);
-      } catch {
-        results[i] = null;
-      }
-    }
-  });
-  await Promise.all(workers);
-  return results;
+async function ensureDir(
+  parent: FileSystemDirectoryHandle,
+  name: string,
+): Promise<FileSystemDirectoryHandle> {
+  const found = await findDir(parent, name);
+  if (found) return found;
+  const created = await parent.getDirectoryHandle(name, { create: true });
+  if (created.name !== name) {
+    throw new Error(`无法创建目录「${name}」（系统返回了「${created.name}」）`);
+  }
+  return created;
 }
 
+/** 列出目录下的图片文件（只枚举，不读内容） */
 async function listPngFiles(
   dir: FileSystemDirectoryHandle,
 ): Promise<{ name: string; file: FileSystemFileHandle }[]> {
@@ -449,14 +446,14 @@ async function openWorkspaceViaFileSystem(): Promise<Workspace | null> {
     throw e;
   }
 
-  // 目录创建失败要暴露出来，否则用户只会看到"点了没反应"
+  // 只验证目录可读，不预先创建子目录：素材目录缺失时按空列表处理，
+  // 真正需要写入时再由 ensureDir 按需创建（避免在工程里留下空文件夹）
   try {
-    for (const dir of REQUIRED_DIRS) {
-      await ensureDir(handle, dir);
-    }
+    // 读一条即可确认目录可访问；空目录也会正常结束
+    for await (const _entry of handle.entries()) break;
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
-    throw new Error(`无法在工作区「${handle.name}」中创建素材目录（${reason}）`);
+    throw new Error(`无法读取工作区「${handle.name}」的内容（${reason}）`);
   }
 
   await saveHandle(handle);
@@ -564,27 +561,24 @@ async function listFilesystemWorkspaceAssets(
 ): Promise<AssetEntry[]> {
   if (!workspace.handle) return [];
   const dirName = category === 'System' ? 'System' : 'FaceSet';
-  const dir = await workspace.handle.getDirectoryHandle(dirName, { create: true });
+  // 没有该目录时按空列表处理（只在真正写入素材时才创建）
+  const dir = await findDir(workspace.handle, dirName);
+  if (!dir) return [];
   const files = await listPngFiles(dir);
 
-  // 单次读取在移动端 SAF 上要几百毫秒，全部串行会让素材列表迟迟出不来
-  const read = await mapLimited<{ name: string; file: FileSystemFileHandle }, AssetEntry>(
-    files,
-    ASSET_READ_CONCURRENCY,
-    async ({ name, file }) => {
-      const dataUrl = await fileHandleToDataUrl(file);
-      return {
-        name: name.replace(/\.[^.]+$/, ''),
-        path: `${dirName}/${name}`,
-        url: dataUrl,
-        category,
-        source: 'workspace',
-        dataUrl,
-      };
-    },
-  );
-
-  return read.filter((a): a is AssetEntry => a !== null).sort((a, b) => a.name.localeCompare(b.name));
+  // 只枚举文件名，不读内容：Android 的 SAF 每读一个文件都要一次跨进程调用
+  // （几百毫秒，且内容读取会全局串行），几十张素材全部预读会让打开工作区卡十几秒。
+  // 素材内容由 resolveAssetUrl 在真正选中时按需读取。
+  return files
+    .map(({ name, file }) => ({
+      name: name.replace(/\.[^.]+$/, ''),
+      path: `${dirName}/${name}`,
+      url: '',
+      category,
+      source: 'workspace' as const,
+      loadUrl: () => fileHandleToDataUrl(file),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 async function listVirtualWorkspaceAssets(
@@ -645,7 +639,8 @@ async function saveAssetToFilesystem(
   await writable.write(buf);
   await writable.close();
 
-  const dataUrl = await fileHandleToDataUrl(fileHandle);
+  // 直接用刚上传的 File，不再从 SAF 回读一遍
+  const dataUrl = await readFileAsDataUrl(file);
   const cleanName = fileName.replace(/\.[^.]+$/, '');
 
   return {
@@ -711,7 +706,8 @@ async function removeAssetFromFilesystem(
 ): Promise<boolean> {
   if (!workspace.handle) return false;
   const dirName = category === 'System' ? 'System' : 'FaceSet';
-  const dir = await workspace.handle.getDirectoryHandle(dirName, { create: true });
+  const dir = await findDir(workspace.handle, dirName);
+  if (!dir) return false;
 
   for await (const [fileName, handle] of dir.entries()) {
     if (handle.kind === 'file' && fileName.replace(/\.[^.]+$/, '') === name) {
@@ -757,7 +753,7 @@ async function exportToFilesystem(
   pngData: Uint8Array,
 ): Promise<string> {
   if (!workspace.handle) throw new Error('工作区句柄不可用');
-  const picDir = await getPictureDir(workspace);
+  const picDir = await getPictureDir(workspace, true);
 
   let finalName = /\.(png|bmp)$/i.test(filename) ? filename : `${filename}.png`;
   let counter = 2;
@@ -852,7 +848,9 @@ export async function listWorkspacePictures(
   }
 
   if (!workspace.handle) return [];
-  const dir = await getPictureDir(workspace);
+  // 没有 Picture 目录时按空列表处理（第一次导出时才会创建）
+  const dir = await findDir(workspace.handle, 'Picture');
+  if (!dir) return [];
   // 只枚举文件名：RPG 工程的 Picture 目录可能有上万张图，
   // 逐个读取数据会耗尽内存并让移动端长时间无响应
   const results: PictureEntry[] = [];
@@ -867,17 +865,26 @@ export async function listWorkspacePictures(
 /**
  * 取得 Picture 目录句柄并缓存
  * 移动端 SAF 每次 getDirectoryHandle 都要好几秒，缩略图逐张读取时不能反复取
+ * @param create 目录不存在时是否创建（只有写入路径才需要）
  */
 const pictureDirCache = new WeakMap<Workspace, Promise<FileSystemDirectoryHandle>>();
 
-function getPictureDir(workspace: Workspace): Promise<FileSystemDirectoryHandle> {
+function getPictureDir(
+  workspace: Workspace,
+  create = false,
+): Promise<FileSystemDirectoryHandle> {
   if (!workspace.handle) return Promise.reject(new Error('工作区句柄不可用'));
-  let cached = pictureDirCache.get(workspace);
-  if (!cached) {
-    cached = workspace.handle.getDirectoryHandle('Picture', { create: true });
-    pictureDirCache.set(workspace, cached);
-  }
-  return cached.catch((e) => {
+  const handle = workspace.handle;
+  const cached = pictureDirCache.get(workspace);
+  if (cached) return cached;
+  const task = (async () => {
+    if (create) return ensureDir(handle, 'Picture');
+    const found = await findDir(handle, 'Picture');
+    if (!found) throw new DOMException('Picture 目录不存在', 'NotFoundError');
+    return found;
+  })();
+  pictureDirCache.set(workspace, task);
+  return task.catch((e) => {
     pictureDirCache.delete(workspace);
     throw e;
   });
@@ -912,7 +919,7 @@ export async function overwritePictureInWorkspace(
     return overwriteVirtualPicture(fileName, pngData);
   }
   if (!workspace.handle) throw new Error('工作区句柄不可用');
-  const picDir = await getPictureDir(workspace);
+  const picDir = await getPictureDir(workspace, true);
   const fileHandle = await picDir.getFileHandle(fileName, { create: true });
   const writable = await fileHandle.createWritable();
   const buf = pngData.buffer.slice(
@@ -982,9 +989,7 @@ export async function writePictureMetaFile(
     return;
   }
   if (!workspace.handle) throw new Error('工作区句柄不可用');
-  const metaDir = await (await getPictureDir(workspace)).getDirectoryHandle(PICTURE_META_DIR, {
-    create: true,
-  });
+  const metaDir = await ensureDir(await getPictureDir(workspace, true), PICTURE_META_DIR);
   const fileHandle = await metaDir.getFileHandle(`${fileName}.json`, { create: true });
   const writable = await fileHandle.createWritable();
   await writable.write(json);

@@ -10,7 +10,7 @@
 // 由后续的全量清理功能处理。
 
 import { computeWindowSize, loadImage } from './messageWindow';
-import { listAssets, type AssetCategory } from './assetLoader';
+import { listAssets, resolveAssetUrl, type AssetCategory } from './assetLoader';
 import { ensureFontLoaded } from './fontLoader';
 import {
   readPictureDataUrlByName,
@@ -255,7 +255,7 @@ async function restoreSystemRef(
     return fallback;
   }
   try {
-    const image = await loadImage(asset.url);
+    const image = await loadImage(await resolveAssetUrl(asset));
     return { name: asset.name, image, transparentColor: ref.transparentColor ?? '#000000' };
   } catch {
     warnings.push(`无法加载素材「${ref.name}」`);
@@ -286,7 +286,7 @@ async function restoreFaceSlot(
     return base;
   }
   try {
-    const image = await loadImage(asset.url);
+    const image = await loadImage(await resolveAssetUrl(asset));
     return { ...base, faceSet: { name: asset.name, image } };
   } catch {
     warnings.push(`无法加载脸图集「${slot.faceSet.name}」`);

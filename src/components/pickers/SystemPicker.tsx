@@ -18,6 +18,7 @@ import {
   findAsset,
   listAssets,
   removeUserAsset,
+  resolveAssetUrl,
 } from '../../engine/assetLoader';
 import { useAssets } from '../../hooks/useAssets';
 import { loadImage } from '../../engine/messageWindow';
@@ -91,23 +92,25 @@ export default function SystemPicker({
     }
     let cancelled = false;
     setLoadingError(null);
-    loadImage(asset.url)
-      .then(async (img) => {
+    // 工作区素材按需读取，选中时才真正读文件
+    void (async () => {
+      try {
+        const url = await resolveAssetUrl(asset);
+        if (cancelled || !url) return;
+        const img = await loadImage(url);
         if (cancelled) return;
         setLoadedImage(img);
         // 自动推断透明色：优先解析 PNG 调色板 index 0（RTP 标准约定）
-        const inferred = await inferTransparentColorFromBuffer(
-          asset.url,
-          img,
-          { systemLayout: true },
-        );
+        const inferred = await inferTransparentColorFromBuffer(url, img, {
+          systemLayout: true,
+        });
         if (cancelled) return;
         if (inferred) setTransparentColor(inferred);
-      })
-      .catch((e) => {
+      } catch (e) {
         if (cancelled) return;
         setLoadingError(String(e) || '加载失败');
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -160,7 +163,7 @@ export default function SystemPicker({
   const handleAutoInfer = async () => {
     if (!loadedImage || !selectedName) return;
     const asset = findAsset('System', selectedName);
-    const url = asset?.url;
+    const url = asset ? await resolveAssetUrl(asset) : '';
     const inferred = url
       ? await inferTransparentColorFromBuffer(url, loadedImage, { systemLayout: true })
       : inferTransparentColor(loadedImage, { systemLayout: true });

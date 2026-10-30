@@ -14,13 +14,18 @@ export interface AssetEntry {
   name: string;
   /** 相对路径（built-in / workspace 有效），如 "RTP/System/System.png" */
   path: string;
-  /** 可直接用于 img.src 的 URL */
+  /**
+   * 可直接用于 img.src 的 URL。
+   * workspace（文件系统模式）素材按需读取，未读取前为空串，用 resolveAssetUrl 取。
+   */
   url: string;
   category: AssetCategory;
   /** 来源：built-in 随应用打包；user 由用户导入（持久化）；workspace 来自工作区文件夹 */
   source: 'builtin' | 'user' | 'workspace';
   /** 用户/工作区素材的 dataURL（用于持久化） */
   dataUrl?: string;
+  /** 按需读取内容（仅 workspace 文件系统素材），读取结果会回填到 url */
+  loadUrl?: () => Promise<string>;
 }
 
 // === 构建时收集 built-in RTP 素材 ===
@@ -182,6 +187,21 @@ export function findAsset(category: AssetCategory, name: string): AssetEntry | n
 /** 获取素材 URL */
 export function getAssetUrl(category: AssetCategory, name: string): string | null {
   return findAsset(category, name)?.url ?? null;
+}
+
+/**
+ * 取素材的可用 URL（会触发按需读取）
+ *
+ * 工作区（文件系统模式）的素材在打开工作区时只枚举文件名，不读内容：
+ * Android 的 SAF 读一次文件要做一次跨进程调用（几百毫秒），几十张素材
+ * 全部预先读成 dataURL 会让打开工作区卡十几秒。选中素材时才走到这里。
+ */
+export async function resolveAssetUrl(entry: AssetEntry): Promise<string> {
+  if (entry.url) return entry.url;
+  if (!entry.loadUrl) return '';
+  const url = await entry.loadUrl();
+  entry.url = url;
+  return url;
 }
 
 /** 列出所有 System 素材名 */

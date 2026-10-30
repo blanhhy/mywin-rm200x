@@ -15,6 +15,7 @@ import {
   findAsset,
   listAssets,
   removeUserAsset,
+  resolveAssetUrl,
 } from '../../engine/assetLoader';
 import { useAssets } from '../../hooks/useAssets';
 import { loadImage } from '../../engine/messageWindow';
@@ -85,15 +86,19 @@ export default function FaceSetPicker({
     }
     let cancelled = false;
     setLoadingError(null);
-    loadImage(asset.url)
-      .then((img) => {
+    // 工作区素材按需读取，选中时才真正读文件
+    void (async () => {
+      try {
+        const url = await resolveAssetUrl(asset);
+        if (cancelled || !url) return;
+        const img = await loadImage(url);
         if (cancelled) return;
         setLoadedImage(img);
-      })
-      .catch((e) => {
+      } catch (e) {
         if (cancelled) return;
         setLoadingError(String(e) || '加载失败');
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
