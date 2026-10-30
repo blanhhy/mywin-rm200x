@@ -57,6 +57,7 @@ export interface SerializedFaceSlot {
 /** 背景：只保留当前模式用得到的字段 */
 export type SerializedBackground =
   | { mode: 'transparent' }
+  | { mode: 'solid'; color: string }
   | { mode: 'system'; system: SerializedAssetRef; stretch: StretchMode }
   | {
       mode: 'image';
@@ -120,6 +121,9 @@ function serializeBackground(
   config: MessageWindowConfig,
   backgroundImageFileName: string | null,
 ): SerializedBackground {
+  if (config.backgroundMode === 'solid') {
+    return { mode: 'solid', color: config.backgroundColor };
+  }
   if (config.backgroundMode === 'system') {
     return {
       mode: 'system',
@@ -325,6 +329,9 @@ export async function buildConfigFromMeta(
     background.backgroundMode = 'system';
     background.backgroundSystem = await restoreSystemRef(meta.background.system, warnings);
     background.backgroundStretch = meta.background.stretch;
+  } else if (meta.background.mode === 'solid') {
+    background.backgroundMode = 'solid';
+    background.backgroundColor = meta.background.color;
   } else if (meta.background.mode === 'image') {
     background.backgroundMode = 'image';
     background.backgroundImageCornerThickness = meta.background.cornerThickness;

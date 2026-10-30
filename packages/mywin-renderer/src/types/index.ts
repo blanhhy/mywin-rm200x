@@ -46,7 +46,7 @@ export const RPG_CONSTANTS = {
 /** 文字兜底色：白色（没有 System 配色、或字号非 12px 时使用） */
 export const DEFAULT_TEXT_RGB = 0xffffff;
 
-export type BackgroundMode = 'transparent' | 'system' | 'image';
+export type BackgroundMode = 'transparent' | 'solid' | 'system' | 'image';
 
 export type StretchMode = 'stretch' | 'tile';
 
@@ -181,6 +181,8 @@ export interface MessageWindowConfig {
 
   // === 背景设置 ===
   backgroundMode: BackgroundMode;
+  /** 当 backgroundMode='solid' 时使用的单一背景色（CSS 颜色字符串，如 "#000000"） */
+  backgroundColor: string;
   /** 当 backgroundMode='system' 时使用 */
   backgroundSystem: SystemImageRef;
   /** 当 backgroundMode='image' 时使用 */
@@ -230,6 +232,7 @@ export const DEFAULT_CONFIG: MessageWindowConfig = {
   },
 
   backgroundMode: 'system',
+  backgroundColor: '#000000',
   backgroundSystem: { name: 'System', image: null, transparentColor: '#000000' },
   backgroundImage: null,
   backgroundImageCornerThickness: 8,

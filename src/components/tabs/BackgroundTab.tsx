@@ -177,6 +177,15 @@ export default function BackgroundTab() {
             <input
               type="radio"
               name="bg-mode"
+              checked={config.backgroundMode === 'solid'}
+              onChange={() => handleModeChange('solid')}
+            />
+            纯色
+          </label>
+          <label className="radio-row">
+            <input
+              type="radio"
+              name="bg-mode"
               checked={config.backgroundMode === 'system'}
               onChange={() => handleModeChange('system')}
             />
@@ -193,6 +202,25 @@ export default function BackgroundTab() {
           </label>
         </div>
       </div>
+
+      {config.backgroundMode === 'solid' && (
+        <div className="field-group">
+          <label className="field-label">背景色</label>
+          <div className="transparent-color-row">
+            颜色：
+            <input
+              type="color"
+              value={config.backgroundColor}
+              onChange={(e) =>
+                updateConfig((c) => ({ ...c, backgroundColor: e.target.value }))
+              }
+            />
+            <code style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+              {config.backgroundColor.toUpperCase()}
+            </code>
+          </div>
+        </div>
+      )}
 
       {config.backgroundMode === 'system' && (
         <>
@@ -392,7 +420,7 @@ export default function BackgroundTab() {
         </>
       )}
 
-      {config.backgroundMode !== 'transparent' && (
+      {config.backgroundMode !== 'transparent' && config.backgroundMode !== 'solid' && (
         <div className="field-group">
           <label className="field-label">绘制模式</label>
           <div className="radio-stack">

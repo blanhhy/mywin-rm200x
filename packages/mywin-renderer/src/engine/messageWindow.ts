@@ -79,9 +79,11 @@ export function computeWindowSize(
 
 /**
  * 创建背景渲染器（System 或 推断图片）
+ *
+ * 透明与纯色模式没有边框，不提供渲染器，背景由 renderMessageWindow 直接处理。
  */
 function createBackgroundRenderer(config: MessageWindowConfig): WindowRenderer | null {
-  if (config.backgroundMode === 'transparent') return null;
+  if (config.backgroundMode === 'transparent' || config.backgroundMode === 'solid') return null;
   if (config.backgroundMode === 'system') {
     const ref = config.backgroundSystem;
     if (!ref.image) return null;
@@ -220,7 +222,11 @@ export function renderMessageWindow(
 
   // 1. 绘制背景
   const bgRenderer = createBackgroundRenderer(config);
-  if (bgRenderer) {
+  if (config.backgroundMode === 'solid') {
+    // 纯色背景：整窗填充单一 RGB 颜色，不绘制边框
+    ctx.fillStyle = config.backgroundColor;
+    ctx.fillRect(0, 0, width, height);
+  } else if (bgRenderer) {
     bgRenderer.drawBackground(ctx, 0, 0, width, height, config.backgroundStretch === 'stretch');
   }
 
