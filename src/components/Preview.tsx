@@ -31,7 +31,7 @@ export default function Preview() {
   const exportPNGToWorkspace = useStore((s) => s.exportPNGToWorkspace);
   const selectedPicture = useStore((s) => s.selectedPicture);
   const overwritePictureToWorkspace = useStore((s) => s.overwritePictureToWorkspace);
-  const refreshPictures = useStore((s) => s.refreshPictures);
+  const refreshPicture = useStore((s) => s.refreshPicture);
   const backgroundImageFileName = useStore((s) => s.backgroundImageFileName);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [transparentColor, setTransparentColor] = useState(recommendTransparentColor());
@@ -67,19 +67,28 @@ export default function Preview() {
   }, [selectedPicture?.fileName]);
 
   // 选中图片后才读取它的数据（大目录下不能预先全量读取）
+  // 同一张图片被替换（覆盖保存）时保留旧数据，等新数据读完再替换，避免中间空白
+  const shownFileNameRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedPicture || !workspace) {
+      shownFileNameRef.current = null;
       setPictureDataUrl(null);
       return;
     }
     let cancelled = false;
-    setPictureDataUrl(null);
+    if (shownFileNameRef.current !== selectedPicture.fileName) {
+      setPictureDataUrl(null);
+    }
     readPictureDataUrl(workspace, selectedPicture)
       .then((url) => {
-        if (!cancelled) setPictureDataUrl(url);
+        if (cancelled) return;
+        shownFileNameRef.current = selectedPicture.fileName;
+        setPictureDataUrl(url);
       })
       .catch(() => {
-        if (!cancelled) setPictureDataUrl(null);
+        if (cancelled) return;
+        shownFileNameRef.current = null;
+        setPictureDataUrl(null);
       });
     return () => {
       cancelled = true;
@@ -229,7 +238,8 @@ export default function Preview() {
               ? `已覆盖 Picture/${savedName}`
               : `已保存到工作区 Picture/${savedName}`,
           );
-          await refreshPictures();
+          // 只更新这一张的条目；重新枚举整个 Picture 目录会重读所有缩略图
+          refreshPicture(savedName);
         } else {
           setExportError(true);
           setExportMsg(selectedPicture ? '覆盖图片失败' : '导出到工作区失败');

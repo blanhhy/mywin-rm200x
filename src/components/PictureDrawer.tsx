@@ -139,32 +139,34 @@ const PictureThumb = memo(function PictureThumb({
   entry: PictureEntry;
   workspace: Workspace;
 }) {
-  const [src, setSrc] = useState<string | null>(() => thumbCache.get(entry) ?? null);
+  // 记录缩略图归属的 entry：条目被替换后，旧缩略图仍可显示到新图生成完毕
+  const [thumb, setThumb] = useState<{ entry: PictureEntry; src: string } | null>(() => {
+    const src = thumbCache.get(entry);
+    return src ? { entry, src } : null;
+  });
   const imgRef = useRef<HTMLImageElement>(null);
 
-  // 刷新列表（含覆盖图片后的刷新）会产生新的 entry 对象：
-  // 丢弃旧缩略图，按新内容重新生成
   useEffect(() => {
-    setSrc(thumbCache.get(entry) ?? null);
-  }, [entry]);
-
-  useEffect(() => {
-    if (src) return;
+    const cached = thumbCache.get(entry);
+    if (cached) {
+      setThumb({ entry, src: cached });
+      return;
+    }
     let cancelled = false;
     const load = () => {
       scheduleRead(async () => {
-        const cached = thumbCache.get(entry);
-        if (cached) return cached;
+        const hit = thumbCache.get(entry);
+        if (hit) return hit;
         const full = entry.dataUrl ?? (await readPictureDataUrl(workspace, entry));
-        const thumb = await buildThumb(full);
-        thumbCache.set(entry, thumb);
-        return thumb;
+        const built = await buildThumb(full);
+        thumbCache.set(entry, built);
+        return built;
       })
-        .then((url) => {
-          if (!cancelled) setSrc(url);
+        .then((src) => {
+          if (!cancelled) setThumb({ entry, src });
         })
         .catch(() => {
-          // 读取失败保持占位
+          // 读取失败时保留旧缩略图（首次读取才显示占位）
         });
     };
 
@@ -181,8 +183,9 @@ const PictureThumb = memo(function PictureThumb({
       cancelled = true;
       unobserveVisible(el);
     };
-  }, [src, entry, workspace]);
+  }, [entry, workspace]);
 
+  const src = thumb?.src ?? null;
   return (
     <img
       ref={imgRef}

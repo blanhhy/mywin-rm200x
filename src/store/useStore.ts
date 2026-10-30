@@ -98,6 +98,11 @@ interface StoreState {
   // 替换模式操作
   toggleDrawer: () => void;
   refreshPictures: () => Promise<void>;
+  /**
+   * 只更新一张图片的条目（覆盖保存后用）
+   * 换成新条目即可让这一张的缩略图缓存失效，其余条目保持原对象与缩略图
+   */
+  refreshPicture: (fileName: string) => void;
   togglePictureSelection: (p: PictureEntry) => void;
   overwritePictureToWorkspace: (fileName: string, pngData: Uint8Array) => Promise<string | null>;
   /** 应用背景参考图片（上传为 null 文件名，图库拖入/右键设为背景为图片文件名） */
@@ -464,6 +469,29 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
+  refreshPicture: (fileName) => {
+    const { pictures, selectedPicture } = get();
+    // 列表还没加载过：保持为空，下次打开图库时整体枚举即可
+    if (pictures.length === 0) return;
+    const entry: PictureEntry = { fileName };
+    const index = pictures.findIndex((p) => p.fileName === fileName);
+    let next: PictureEntry[];
+    if (index >= 0) {
+      next = pictures.slice();
+      next[index] = entry;
+    } else {
+      // 另存的新文件：按文件名顺序插入，避免整表重排
+      next = pictures.filter((p) => p.fileName !== fileName);
+      const at = next.findIndex((p) => p.fileName.localeCompare(fileName) > 0);
+      next.splice(at === -1 ? next.length : at, 0, entry);
+    }
+    set({
+      pictures: next,
+      selectedPicture:
+        selectedPicture?.fileName === fileName ? entry : selectedPicture,
+    });
+  },
+
   togglePictureSelection: (p) => {
     const cur = get().selectedPicture;
     const next = cur && cur.fileName === p.fileName ? null : p;
@@ -576,8 +604,12 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const ok = await deletePictureFromWorkspace(workspace, p.fileName);
       if (!ok) return { ok: false, message: '删除失败' };
-      if (get().selectedPicture?.fileName === p.fileName) set({ selectedPicture: null });
-      await get().refreshPictures();
+      // 只移除这一项：重新枚举整个 Picture 目录会让所有缩略图重新读取
+      set({
+        pictures: get().pictures.filter((x) => x.fileName !== p.fileName),
+        selectedPicture:
+          get().selectedPicture?.fileName === p.fileName ? null : get().selectedPicture,
+      });
       return { ok: true, message: '' };
     } catch {
       return { ok: false, message: '删除失败' };
