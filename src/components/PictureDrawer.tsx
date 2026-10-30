@@ -21,6 +21,13 @@ let savedScroll: { workspace: unknown; scrollTop: number } = {
   scrollTop: 0,
 };
 
+// 同理保留搜索状态：关闭再打开抽屉时筛选条件与滚动进度都还在
+let savedSearch: { workspace: unknown; input: string; query: string } = {
+  workspace: null,
+  input: '',
+  query: '',
+};
+
 /** 网格间距与最小列宽，与 App.css 中 .picture-grid 保持一致 */
 const GRID_GAP = 8;
 const MIN_CELL_W = 96;
@@ -208,9 +215,19 @@ function PictureDrawer() {
   /** 首次恢复滚动位置之后，滚动时才写回 savedScroll */
   const restoredRef = useRef(false);
   /** 搜索框内容（回车/点搜索按钮才生效，不实时筛选） */
-  const [queryInput, setQueryInput] = useState('');
+  const [queryInput, setQueryInput] = useState(() =>
+    savedSearch.workspace === workspace ? savedSearch.input : '',
+  );
   /** 已生效的搜索词 */
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() =>
+    savedSearch.workspace === workspace ? savedSearch.query : '',
+  );
+
+  // 记住搜索状态，供关闭再打开时恢复
+  useEffect(() => {
+    savedSearch = { workspace, input: queryInput, query };
+  }, [workspace, queryInput, query]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? pictures.filter((p) => p.fileName.toLowerCase().includes(q)) : pictures;
