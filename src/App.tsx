@@ -214,23 +214,24 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>MyWin RM200X</h1>
+        <h1>MYWIN</h1>
+        <div className="divider-v"></div>
         <WorkspaceSelector />
         <div className="header-actions">
           <button
-            className="reset-btn refresh-btn"
+            className="header-btn refresh-btn"
             onClick={() => refreshAssets()}
             disabled={!workspace || assetRefreshing}
             title={workspace ? '重载素材目录（System / FaceSet / Picture）' : '打开工作区后可刷新素材目录'}
           >
             ⟳
           </button>
-          <button className="reset-btn theme-btn" onClick={toggleTheme} title={theme === 'dark' ? '切换到亮色' : '切换到暗色'}>
+          <button className="header-btn theme-btn" onClick={toggleTheme} title={theme === 'dark' ? '切换到亮色' : '切换到暗色'}>
             {theme === 'dark' ? '☀' : '☾'}
           </button>
           {workspace && (
             <button
-              className={`reset-btn drawer-btn ${drawerOpen ? 'active' : ''}`}
+              className={`header-btn drawer-btn ${drawerOpen ? 'active' : ''}`}
               onClick={toggleDrawer}
               title={drawerOpen ? '关闭图库' : '打开图库'}
             >
