@@ -169,13 +169,13 @@ function WorkspaceSelector() {
 }
 
 export default function App() {
-  const { activeTab, setActiveTab, config, updateConfig, initialized, setInitialized, restoreWorkspace, theme, toggleTheme, workspace, drawerOpen, toggleDrawer, refreshAssets, assetRefreshing } =
+  const { activeTab, setActiveTab, config, updateConfig, initialized, setInitialized, refreshRecentWorkspaces, theme, toggleTheme, workspace, drawerOpen, toggleDrawer, refreshAssets, assetRefreshing } =
     useStore();
 
-  // 应用启动时自动恢复上次的工作区
+  // 页面加载只填充"最近打开"列表，不自动打开上次的工程
   useEffect(() => {
-    restoreWorkspace();
-  }, [restoreWorkspace]);
+    void refreshRecentWorkspaces();
+  }, [refreshRecentWorkspaces]);
 
   // 初始化主题 data-theme
   useEffect(() => {

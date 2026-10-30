@@ -21,7 +21,6 @@ import { buildConfigFromMeta, readPictureMeta } from '../engine/pictureMeta';
 import {
   openWorkspace,
   closeWorkspace as closeWorkspaceDir,
-  tryRestoreWorkspace,
   listWorkspaceAssets,
   saveAssetToWorkspace,
   removeAssetFromWorkspace,
@@ -75,7 +74,8 @@ interface StoreState {
 
   // 工作区操作
   openWorkspace: () => Promise<void>;
-  restoreWorkspace: () => Promise<void>;
+  /** 只读取最近打开列表（页面加载时用，不自动打开任何工作区） */
+  refreshRecentWorkspaces: () => Promise<void>;
   closeWorkspace: () => Promise<void>;
   /** 从最近列表重新打开一个工作区（filesystem 模式） */
   openRecentWorkspace: (entry: RecentWorkspace) => Promise<void>;
@@ -334,13 +334,7 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  restoreWorkspace: async () => {
-    try {
-      const ws = await tryRestoreWorkspace();
-      if (ws) await adoptWorkspace(ws, set);
-    } catch {
-      // 静默失败，不影响应用正常使用
-    }
+  refreshRecentWorkspaces: async () => {
     await loadRecentsInto(set);
   },
 
