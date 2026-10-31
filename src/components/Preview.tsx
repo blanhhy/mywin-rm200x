@@ -61,9 +61,11 @@ export default function Preview() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [nameChecking, setNameChecking] = useState(false);
 
-  // 切换对照图片时重置尺寸缓存
+  // 切换对照图片时重置尺寸缓存与参考图：
+  // 换图后不能沿用上一张的像素（自我维持背景与 \r / \p 填充都取它的边缘）
   useEffect(() => {
     setCompareDims(null);
+    setReferenceImage(null);
   }, [selectedPicture?.fileName]);
 
   // 选中图片后才读取它的数据（大目录下不能预先全量读取）
@@ -412,6 +414,9 @@ export default function Preview() {
           <div className="canvas-wrapper">
             {pictureDataUrl ? (
               <img
+                // 换图时重建元素：复用同一个 <img> 会让 onLoad 回传相同引用，
+                // state 不更新，预览就会残留上一张图片的像素
+                key={selectedPicture.fileName}
                 className="compare-img"
                 src={pictureDataUrl}
                 alt={selectedPicture.fileName}
