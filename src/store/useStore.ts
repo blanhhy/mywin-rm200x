@@ -165,6 +165,45 @@ function syncFollowTargetSize(
     });
 }
 
+/**
+ * 纯色的自我维持变体：切换目标图片时，取内容区左上角像素作为背景色
+ * （内容区左上角即内边距的左上角，标准窗口固定 8）
+ */
+function syncSelfSustainColor(
+  picture: PictureEntry,
+  get: () => StoreState,
+  set: (partial: (s: StoreState) => Partial<StoreState>) => void,
+): void {
+  if (get().config.backgroundMode !== 'solid' || !get().config.backgroundSelfSustaining) return;
+  const workspace = get().workspace;
+  if (!workspace) return;
+  readPictureDataUrl(workspace, picture)
+    .then((dataUrl) => loadImage(dataUrl))
+    .then((img) => {
+      // 加载期间选中项若已变化，丢弃过期结果
+      if (get().selectedPicture?.fileName !== picture.fileName) return;
+      const { padding } = get().config;
+      const start = get().config.standardWindow
+        ? { x: 8, y: 8 }
+        : { x: padding.left, y: padding.top };
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img as CanvasImageSource, start.x, start.y, 1, 1, 0, 0, 1, 1);
+      const px = ctx.getImageData(0, 0, 1, 1).data;
+      const color = `#${[px[0], px[1], px[2]]
+        .map((v) => v.toString(16).padStart(2, '0'))
+        .join('')}`;
+      set((s) => ({ config: { ...s.config, backgroundColor: color } }));
+    })
+    .catch(() => {
+      // 图片读取失败时保留原色
+    });
+}
+
 /** 读取最近打开的工作区列表到 state */
 async function loadRecentsInto(
   set: (partial: (s: StoreState) => Partial<StoreState>) => void,
@@ -498,6 +537,7 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ selectedPicture: next });
     // 选中新图片后，跟随模式下的宽高记录随之更新
     if (next) syncFollowTargetSize(next, get, set);
+    if (next) syncSelfSustainColor(next, get, set);
   },
 
   overwritePictureToWorkspace: async (fileName: string, pngData: Uint8Array) => {
@@ -534,6 +574,7 @@ export const useStore = create<StoreState>((set, get) => ({
   setPictureAsReference: (p) => {
     set({ selectedPicture: p });
     syncFollowTargetSize(p, get, set);
+    syncSelfSustainColor(p, get, set);
   },
 
   setPictureAsBackground: async (p) => {

@@ -183,6 +183,12 @@ export interface MessageWindowConfig {
   backgroundMode: BackgroundMode;
   /** 当 backgroundMode='solid' 时使用的单一背景色（CSS 颜色字符串，如 "#000000"） */
   backgroundColor: string;
+  /**
+   * 纯色模式的自我维持变体：保留覆盖目标图片的全部像素，
+   * 只把内容区（内边距内侧）填成 backgroundColor。
+   * 需要配合覆盖模式（有目标图片）使用。
+   */
+  backgroundSelfSustaining: boolean;
   /** 当 backgroundMode='system' 时使用 */
   backgroundSystem: SystemImageRef;
   /** 当 backgroundMode='image' 时使用 */
@@ -233,6 +239,7 @@ export const DEFAULT_CONFIG: MessageWindowConfig = {
 
   backgroundMode: 'system',
   backgroundColor: '#000000',
+  backgroundSelfSustaining: false,
   backgroundSystem: { name: 'System', image: null, transparentColor: '#000000' },
   backgroundImage: null,
   backgroundImageCornerThickness: 8,

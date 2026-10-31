@@ -16,8 +16,14 @@ import BackgroundFrameEditor, { type TileRect } from '../BackgroundFrameEditor';
 import Modal from '../Modal';
 
 export default function BackgroundTab() {
-  const { config, updateConfig, applyReferenceBackground, workspace, saveAssetToWorkspace } =
-    useStore();
+  const {
+    config,
+    updateConfig,
+    applyReferenceBackground,
+    workspace,
+    saveAssetToWorkspace,
+    selectedPicture,
+  } = useStore();
   const [systemPickerOpen, setSystemPickerOpen] = useState(false);
   const [frameEditorOpen, setFrameEditorOpen] = useState(false);
   const [referenceDragOver, setReferenceDragOver] = useState(false);
@@ -111,6 +117,11 @@ export default function BackgroundTab() {
 
   const handleModeChange = (mode: BackgroundMode) => {
     updateConfig((c) => ({ ...c, backgroundMode: mode }));
+  };
+
+  /** 自我维持：不满足覆盖条件时不取消勾选，仅在实际渲染时回退成普通纯色 */
+  const handleSelfSustainingChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    updateConfig((c) => ({ ...c, backgroundSelfSustaining: e.target.checked }));
   };
 
   const handleStretchChange = (mode: StretchMode) => {
@@ -300,6 +311,19 @@ export default function BackgroundTab() {
               {config.backgroundColor.toUpperCase()}
             </code>
           </div>
+          <div className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={config.backgroundSelfSustaining}
+              onChange={handleSelfSustainingChange}
+            />
+            <span>保持边缘</span>
+          </div>
+          {config.backgroundSelfSustaining && !selectedPicture && (
+            <small className="warning-banner">
+              没有目标图片，保持边缘不会生效。
+            </small>
+          )}
         </div>
       )}
 
@@ -510,7 +534,8 @@ export default function BackgroundTab() {
         </>
       )}
 
-      {config.backgroundMode !== 'transparent' && config.backgroundMode !== 'solid' && (
+      {config.backgroundMode !== 'transparent' &&
+        config.backgroundMode !== 'solid' && (
         <div className="field-group">
           <label className="field-label">绘制模式</label>
           <div className="radio-stack">

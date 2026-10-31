@@ -105,7 +105,10 @@ export default function Preview() {
   useEffect(() => {
     const out = canvasRef.current;
     if (!out) return;
-    const { canvas, fillRegions } = renderMessageWindow(config);
+    // 自我维持模式的像素来源是覆盖目标图片本身
+    const { canvas, fillRegions } = renderMessageWindow(config, {
+      backgroundSource: referenceImage ?? undefined,
+    });
     const ctx = out.getContext('2d')!;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, out.width, out.height);

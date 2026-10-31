@@ -25,6 +25,13 @@ export interface RenderResult {
 export interface RenderOptions {
   /** 内置位图字体；未指定时按浏览器语言选择。 */
   defaultBitmapFontId?: BitmapFontId;
+  /**
+   * 自我维持模式的像素来源（覆盖写模式的目标图片）
+   *
+   * 该模式的背景不是重新绘制的，而是原样保留目标图片的像素，
+   * 只把内容区替换成纯色，因此必须由调用方传入目标图片。
+   */
+  backgroundSource?: LoadedImage;
 }
 
 /**
@@ -220,9 +227,24 @@ export function renderMessageWindow(
   // 清空（透明）
   ctx.clearRect(0, 0, width, height);
 
+  // 内容区内边距（标准窗口下固定 8）
+  const padding = config.standardWindow
+    ? { top: 8, right: 8, bottom: 8, left: 8 }
+    : config.padding;
+
   // 1. 绘制背景
   const bgRenderer = createBackgroundRenderer(config);
-  if (config.backgroundMode === 'solid') {
+  if (config.backgroundMode === 'solid' && config.backgroundSelfSustaining && options.backgroundSource) {
+    // 自我维持：目标图片按原始像素 1:1 绘制，边框等像素全部原样保留，
+    // 只把内容区（内边距内侧）替换成纯色，供文字/脸图绘制
+    ctx.drawImage(options.backgroundSource as CanvasImageSource, 0, 0);
+    const contentW = width - padding.left - padding.right;
+    const contentH = height - padding.top - padding.bottom;
+    if (contentW > 0 && contentH > 0) {
+      ctx.fillStyle = config.backgroundColor;
+      ctx.fillRect(padding.left, padding.top, contentW, contentH);
+    }
+  } else if (config.backgroundMode === 'solid') {
     // 纯色背景：整窗填充单一 RGB 颜色，不绘制边框
     ctx.fillStyle = config.backgroundColor;
     ctx.fillRect(0, 0, width, height);
@@ -236,9 +258,6 @@ export function renderMessageWindow(
   }
 
   // 3. 客户区
-  const padding = config.standardWindow
-    ? { top: 8, right: 8, bottom: 8, left: 8 }
-    : config.padding;
   const contentX = padding.left;
   const contentY = padding.top;
 
