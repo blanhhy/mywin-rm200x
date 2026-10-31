@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { loadImage } from '../../engine/messageWindow';
 import { dataUrlToBytes, parsePalette0 } from '../../engine/transparentColorInference';
 import { readPictureDataUrl } from '../../engine/workspace';
+import { canvasTo8bitPNG, pickTransparentColor } from '../../engine/pngExporter';
+import { InferredImageRenderer } from '../../engine/systemImage';
 import {
   RPG_CONSTANTS,
   type BackgroundMode,
@@ -11,12 +13,31 @@ import {
 } from '../../types';
 import SystemPicker, { type SystemPickerValue } from '../pickers/SystemPicker';
 import BackgroundFrameEditor, { type TileRect } from '../BackgroundFrameEditor';
+import Modal from '../Modal';
 
 export default function BackgroundTab() {
-  const { config, updateConfig, applyReferenceBackground } = useStore();
+  const { config, updateConfig, applyReferenceBackground, workspace, saveAssetToWorkspace } =
+    useStore();
   const [systemPickerOpen, setSystemPickerOpen] = useState(false);
   const [frameEditorOpen, setFrameEditorOpen] = useState(false);
   const [referenceDragOver, setReferenceDragOver] = useState(false);
+  /** 待保存的 System 预览图（null 表示未打开"创建 System"弹窗） */
+  const [systemPreview, setSystemPreview] = useState<HTMLCanvasElement | null>(null);
+  const [systemName, setSystemName] = useState('System');
+  const [systemError, setSystemError] = useState<string | null>(null);
+  const [systemSaving, setSystemSaving] = useState(false);
+  // 预览只取实际有内容的区域：底纹 + 边框，共 64×32
+  const systemPreviewUrl = useMemo(() => {
+    if (!systemPreview) return '';
+    const crop = document.createElement('canvas');
+    crop.width = 64;
+    crop.height = 32;
+    const cctx = crop.getContext('2d');
+    if (!cctx) return '';
+    cctx.imageSmoothingEnabled = false;
+    cctx.drawImage(systemPreview, 0, 0, 64, 32, 0, 0, 64, 32);
+    return crop.toDataURL('image/png');
+  }, [systemPreview]);
 
   /** 应用可视化框选的结果：同时更新角框/边框厚度与底纹区域 */
   const handleFrameApply = (corner: number, edge: number, rect: TileRect) => {
@@ -26,6 +47,66 @@ export default function BackgroundTab() {
       backgroundImageEdgeThickness: edge,
       backgroundImageTileRect: rect,
     }));
+  };
+
+  /** 以当前推断的底纹/边框生成 System 预览 */
+  const handleCreateSystem = () => {
+    if (!config.backgroundImage) return;
+    const corner = config.backgroundImageCornerThickness;
+    const tileRect = config.backgroundImageTileRect ?? { x: corner, y: corner, w: 2, h: 2 };
+    const transparentColor = config.backgroundImageUseTransparentColor
+      ? config.backgroundImageTransparentColor
+      : null;
+    const renderer = new InferredImageRenderer(
+      config.backgroundImage,
+      corner,
+      config.backgroundImageEdgeThickness,
+      tileRect,
+      transparentColor,
+    );
+    // 只合成背景推断结果（底纹 + 边框），不合成文字配色
+    setSystemPreview(renderer.buildSystemImage());
+    setSystemName('System');
+    setSystemError(null);
+  };
+
+  /** 把预览中的 System 图保存到工作区 System 目录 */
+  const handleSaveSystem = async () => {
+    if (!systemPreview || systemSaving) return;
+    const stem = systemName.trim();
+    if (!stem) {
+      setSystemError('请输入文件名');
+      return;
+    }
+    if (/[\\/:*?"<>|]/.test(stem)) {
+      setSystemError('文件名不能包含 \\ / : * ? " < > |');
+      return;
+    }
+    if (!workspace) {
+      setSystemError('未打开工作区，无法保存素材');
+      return;
+    }
+
+    setSystemSaving(true);
+    setSystemError(null);
+    try {
+      // 8 位索引色 PNG：透明色由画面内容自动挑选，不沿用参考图的透明色
+      const transparentColor = pickTransparentColor(systemPreview);
+      const bytes = await canvasTo8bitPNG(systemPreview, { transparentColor });
+      const entry = await saveAssetToWorkspace(
+        'System',
+        new File([bytes.slice().buffer], `${stem}.png`, { type: 'image/png' }),
+      );
+      if (!entry) {
+        setSystemError('保存失败');
+        return;
+      }
+      setSystemPreview(null);
+    } catch (e) {
+      setSystemError(String(e) || '保存失败');
+    } finally {
+      setSystemSaving(false);
+    }
   };
 
   const handleModeChange = (mode: BackgroundMode) => {
@@ -416,6 +497,15 @@ export default function BackgroundTab() {
             >
               可视化框选
             </button>
+            <button
+              type="button"
+              className="upload-btn frame-editor-open-btn"
+              onClick={handleCreateSystem}
+              disabled={!config.backgroundImage}
+              title="将推断结果固化为 System 图"
+            >
+              另存为 System
+            </button>
           </div>
         </>
       )}
@@ -445,6 +535,79 @@ export default function BackgroundTab() {
           </div>
         </div>
       )}
+
+      <Modal
+        open={systemPreview !== null}
+        title="另存为 System"
+        onClose={() => {
+          if (systemSaving) return;
+          setSystemPreview(null);
+          setSystemError(null);
+        }}
+        width={348}
+        footer={
+          <>
+            <button
+              className="modal-btn"
+              onClick={() => {
+                setSystemPreview(null);
+                setSystemError(null);
+              }}
+              disabled={systemSaving}
+            >
+              取消
+            </button>
+            <button
+              className="modal-btn primary"
+              onClick={handleSaveSystem}
+              disabled={systemSaving}
+            >
+              {systemSaving ? '保存中…' : '保存'}
+            </button>
+          </>
+        }
+      >
+        {/* modal-body 默认是横向 flex，这里改为纵向：预览在上、文件名在下 */}
+        <div className="system-dialog-body">
+          <div className="field-group">
+            <div className="system-preview">
+              <img
+                src={systemPreviewUrl}
+                alt="生成的 System"
+                style={{
+                  width: 320,
+                  height: 160,
+                  imageRendering: 'pixelated',
+                  // 棋盘格底：便于看清透明区域
+                  backgroundImage:
+                    'linear-gradient(45deg, rgba(128,128,128,.35) 25%, transparent 25%, transparent 75%, rgba(128,128,128,.35) 75%), linear-gradient(45deg, rgba(128,128,128,.35) 25%, transparent 25%, transparent 75%, rgba(128,128,128,.35) 75%)',
+                  backgroundSize: '16px 16px',
+                  backgroundPosition: '0 0, 8px 8px',
+                }}
+              />
+            </div>
+          </div>
+          <div className="field-group">
+            <div className="filename-row">
+              <input
+                className="filename-input"
+                value={systemName}
+                autoFocus
+                onChange={(e) => {
+                  setSystemName(e.target.value);
+                  setSystemError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleSaveSystem();
+                }}
+                disabled={systemSaving}
+              />
+              <span className="filename-dot">.png</span>
+            </div>
+            {systemError && <small className="filename-error">{systemError}</small>}
+          </div>
+        </div>
+      </Modal>
 
       <SystemPicker
         open={systemPickerOpen}

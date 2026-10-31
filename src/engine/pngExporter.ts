@@ -434,6 +434,30 @@ export function countUniqueColors(canvas: HTMLCanvasElement): number {
 }
 
 /**
+ * 为索引色导出自动挑选透明色
+ *
+ * 不沿用参考图 / 用户设置里的透明色：先试 RPG Maker 常用的几个候选色，
+ * 取第一个当前画面没有用到的（避免不透明像素被当作透明）；都被占用时
+ * 再按 RGB 空间顺序找一个空闲色。
+ */
+export function pickTransparentColor(canvas: HTMLCanvasElement): string {
+  const used = collectOpaqueColors(canvas);
+  const candidates = [0x003300, 0x00ff00, 0xff00ff, 0x000000, 0xffffff];
+  for (const key of candidates) {
+    if (!used.has(key)) {
+      return rgbToHex((key >> 16) & 0xff, (key >> 8) & 0xff, key & 0xff);
+    }
+  }
+  // 兜底：按固定步长在 RGB 空间里找一个空闲色
+  for (let key = 0; key < 0x1000000; key += 0x010101) {
+    if (!used.has(key)) {
+      return rgbToHex((key >> 16) & 0xff, (key >> 8) & 0xff, key & 0xff);
+    }
+  }
+  return recommendTransparentColor();
+}
+
+/**
  * 将 canvas 导出为 8 位索引色 PNG（bitDepth=8, colorType=3）
  * - 透明像素（alpha=0）被替换为 transparentColor
  * - 调色板 palette[0] = 透明色

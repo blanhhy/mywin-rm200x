@@ -445,6 +445,49 @@ export class InferredImageRenderer {
     }
   }
 
+  /**
+   * 以当前推断参数生成 160×80 的 System 图
+   *
+   * 只包含背景推断结果，遵循 RPG Maker 200x 的 System 图约定：
+   *   (0, 0, 32, 32)    底纹
+   *   (32, 0, 32, 32)   边框层（四角 + 四边）
+   * 文字阴影块与文字配色区保持透明，不参与合成。
+   *
+   * 底纹与边框都直接复用推断引擎自己的绘制（drawBackground / drawBorder），
+   * 分别画到两个 32×32 区域：底纹区就是 32×32 的底纹单元，边框区就是
+   * 32×32 窗口的边框层。因此角框 / 边厚小于 8 时，边会平铺延伸到角框与
+   * 8px 边界之间，空出来的只有远离窗口边缘的内侧部分。
+   */
+  buildSystemImage(): HTMLCanvasElement {
+    const out = document.createElement('canvas');
+    out.width = RPG_CONSTANTS.SYSTEM_WIDTH;
+    out.height = RPG_CONSTANTS.SYSTEM_HEIGHT;
+    const ctx = out.getContext('2d');
+    if (!ctx) throw new Error('无法获取 2D 上下文');
+    ctx.imageSmoothingEnabled = false;
+
+    // 底纹层：复用推断引擎的底纹绘制，铺满 System 的 32×32 底纹单元
+    const bg = document.createElement('canvas');
+    bg.width = 32;
+    bg.height = 32;
+    const bgCtx = bg.getContext('2d');
+    if (!bgCtx) throw new Error('无法获取 2D 上下文');
+    this.drawBackground(bgCtx, 0, 0, 32, 32, true);
+    ctx.drawImage(bg, 0, 0);
+
+    // 边框层：复用推断引擎的边框绘制，画到 32×32（System 边框区的大小）。
+    // 角框 / 边厚小于 8 时，边会自动平铺延伸到角框与 8px 边界之间的空隙。
+    const border = document.createElement('canvas');
+    border.width = 32;
+    border.height = 32;
+    const borderCtx = border.getContext('2d');
+    if (!borderCtx) throw new Error('无法获取 2D 上下文');
+    this.drawBorder(borderCtx, 0, 0, 32, 32);
+    ctx.drawImage(border, BORDER_RECTS.UL.x, 0);
+
+    return out;
+  }
+
   /** 平铺一条边（与 SystemImageRenderer.tileEdge 逻辑一致） */
   private tileEdge(
     ctx: CanvasRenderingContext2D,
