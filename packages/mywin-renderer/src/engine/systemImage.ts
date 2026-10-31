@@ -375,26 +375,21 @@ export class InferredImageRenderer {
     stretch: boolean,
   ): void {
     if (w <= 0 || h <= 0) return;
-    // 角框与边框厚度不同：取较小值作为内区偏移，
-    // 保证角框较大时边条下方不会露出未绘制的空隙（边框随后覆盖在内区之上）
-    const inset = Math.min(this.cornerThickness, this.edgeThickness);
-    const innerX = x + inset;
-    const innerY = y + inset;
-    const innerW = Math.max(w - inset * 2, 0);
-    const innerH = Math.max(h - inset * 2, 0);
-    if (innerW <= 0 || innerH <= 0) return;
     if (!this.bgTile32) return;
 
+    // 与 System 图完全一致：底纹从窗口左上角开始铺满整个窗口，
+    // 随后由边框覆盖在上层。不能内缩到边框内部才开始绘制，
+    // 否则 tile 的首行像素会露在边框内侧，看起来像是底纹画在了边框下面。
     ctx.imageSmoothingEnabled = false;
     if (stretch) {
-      ctx.drawImage(this.bgTile32, 0, 0, 32, 32, innerX, innerY, innerW, innerH);
+      ctx.drawImage(this.bgTile32, 0, 0, 32, 32, x, y, w, h);
     } else {
       const pattern = ctx.createPattern(this.bgTile32, 'repeat');
       if (!pattern) return;
       ctx.save();
-      ctx.translate(innerX, innerY);
+      ctx.translate(x, y);
       ctx.fillStyle = pattern;
-      ctx.fillRect(0, 0, innerW, innerH);
+      ctx.fillRect(0, 0, w, h);
       ctx.restore();
     }
   }
