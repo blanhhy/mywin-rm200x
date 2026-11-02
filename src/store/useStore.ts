@@ -113,6 +113,8 @@ interface StoreState {
   ) => void;
   /** 仅把图片设为参考（对照/覆盖目标） */
   setPictureAsReference: (p: PictureEntry) => void;
+  /** 用当前目标图片更新自我维持的背景色（勾选"自我维持"时用） */
+  syncSelfSustainBackground: () => void;
   /** 把图库图片设为背景参考 */
   setPictureAsBackground: (p: PictureEntry) => Promise<boolean>;
   /** 读入图片随图保存的参数并设为参考 */
@@ -575,6 +577,11 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ selectedPicture: p });
     syncFollowTargetSize(p, get, set);
     syncSelfSustainColor(p, get, set);
+  },
+
+  syncSelfSustainBackground: () => {
+    const sel = get().selectedPicture;
+    if (sel) syncSelfSustainColor(sel, get, set);
   },
 
   setPictureAsBackground: async (p) => {

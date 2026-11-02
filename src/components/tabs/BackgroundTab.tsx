@@ -23,6 +23,7 @@ export default function BackgroundTab() {
     workspace,
     saveAssetToWorkspace,
     selectedPicture,
+    syncSelfSustainBackground,
   } = useStore();
   const [systemPickerOpen, setSystemPickerOpen] = useState(false);
   const [frameEditorOpen, setFrameEditorOpen] = useState(false);
@@ -119,9 +120,11 @@ export default function BackgroundTab() {
     updateConfig((c) => ({ ...c, backgroundMode: mode }));
   };
 
-  /** 自我维持：不满足覆盖条件时不取消勾选，仅在实际渲染时回退成普通纯色 */
+  /** 自我维持：不满足覆盖条件时仅提示并在渲染中回退；勾选时立即让背景色跟随目标图片 */
   const handleSelfSustainingChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    updateConfig((c) => ({ ...c, backgroundSelfSustaining: e.target.checked }));
+    const checked = e.target.checked;
+    updateConfig((c) => ({ ...c, backgroundSelfSustaining: checked }));
+    if (checked) syncSelfSustainBackground();
   };
 
   const handleStretchChange = (mode: StretchMode) => {
