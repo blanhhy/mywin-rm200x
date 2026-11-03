@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { type SystemImageRef } from '../../types';
+import { DEFAULT_CONFIG, type SystemImageRef } from '../../types';
 import { findNativePixelSize } from '../../engine/customFontRenderer';
 import SystemPicker, { type SystemPickerValue } from '../pickers/SystemPicker';
 import FontPicker, { type FontPickerValue } from '../pickers/FontPicker';
@@ -60,6 +60,19 @@ export default function TextTab() {
         },
       }));
     };
+
+  /** 还原字号、间距与行距（字体与阴影开关保留） */
+  const handleRestoreFont = () => {
+    updateConfig((c) => ({
+      ...c,
+      customFont: {
+        ...c.customFont,
+        size: DEFAULT_CONFIG.customFont.size,
+        letterSpacing: DEFAULT_CONFIG.customFont.letterSpacing,
+        lineSpacing: DEFAULT_CONFIG.customFont.lineSpacing,
+      },
+    }));
+  };
 
   const handlePixelPerfectChange = (checked: boolean) => {
     updateConfig((c) => {
@@ -212,6 +225,13 @@ export default function TextTab() {
           />
           <span>像素完美</span>
         </label>
+      </div>
+
+      <div className="field-group">
+        <button className="action-btn" onClick={handleRestoreFont}>
+          还原设置
+        </button>
+        <small className="field-hint">把字号、间距与行距还原为默认值。</small>
       </div>
 
       <SystemPicker
