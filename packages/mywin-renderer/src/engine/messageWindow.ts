@@ -35,6 +35,13 @@ export interface RenderOptions {
 }
 
 /**
+ * 内置位图字体的行高：字形 12px + 可调行距（默认行距 4 → 16px，与 RPG 一致）
+ */
+function bitmapLineHeight(config: MessageWindowConfig): number {
+  return Math.max(1, RPG_CONSTANTS.FONT_HEIGHT + config.customFont.lineSpacing);
+}
+
+/**
  * 计算窗口实际尺寸（处理 standardWindow / auto / 数值 三种情况）
  */
 export function computeWindowSize(
@@ -50,7 +57,12 @@ export function computeWindowSize(
   // 自适应或数值
   const textBounds = config.customFont.family
     ? measureCustomFontTextBounds(config.text, config.customFont)
-    : measureBitmapTextBounds(config.text, resolveDefaultFontId(options.defaultBitmapFontId));
+    : measureBitmapTextBounds(
+        config.text,
+        resolveDefaultFontId(options.defaultBitmapFontId),
+        bitmapLineHeight(config),
+        config.customFont.letterSpacing,
+      );
   // 左右脸图各自占用的宽度（右侧只有脸图 + 左间距，文字从 0 开始）
   const faceWidth =
     (config.faceLeft.enabled
@@ -305,6 +317,10 @@ export function renderMessageWindow(
       x: textX,
       y: textY,
       colorSource,
+      // 字间距、行距与阴影对内置字体同样生效
+      drawShadow: config.customFont.shadow,
+      lineHeight: bitmapLineHeight(config),
+      letterSpacing: config.customFont.letterSpacing,
       fontId: resolveDefaultFontId(options.defaultBitmapFontId),
       onFillRegion: (region) => fillRegions.push(region),
     });

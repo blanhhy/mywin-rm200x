@@ -76,7 +76,7 @@ export interface PictureMeta {
   version: typeof META_VERSION;
   savedAt: number;
   text: string;
-  /** 省略表示内置位图字体 */
+  /** family 为 null 表示内置位图字体；字间距与阴影同样记录。旧文件省略该字段时取默认值 */
   customFont?: CustomFontConfig;
   standardWindow: boolean;
   /** 仅非标准窗口时记录（标准窗口下尺寸与内边距被锁定） */
@@ -174,7 +174,8 @@ export function buildPictureMeta(
     version: META_VERSION,
     savedAt: Date.now(),
     text: config.text,
-    ...(config.customFont.family ? { customFont: { ...config.customFont } } : {}),
+    // 内置字体（family 为 null）也记录字间距与阴影，字段结构不变
+    customFont: { ...config.customFont },
     standardWindow: config.standardWindow,
     ...(config.standardWindow ? {} : { width, height, padding: { ...config.padding } }),
     background: serializeBackground(config, backgroundImageFileName),

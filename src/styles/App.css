@@ -266,6 +266,13 @@
   pointer-events: none;
 }
 
+/* 单行禁用：同一分组里只有这一行需要自定义字体 */
+.size-row.disabled,
+.checkbox-row.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
 .field-label {
   font-size: 12px;
   font-weight: 600;

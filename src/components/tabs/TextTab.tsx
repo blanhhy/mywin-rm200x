@@ -152,8 +152,8 @@ export default function TextTab() {
         </div>
       </div>
 
-      <div className={`field-group ${fontSelected ? '' : 'disabled'}`}>
-        <div className="size-row">
+      <div className="field-group">
+        <div className={`size-row ${fontSelected ? '' : 'disabled'}`}>
           <span className="field-label">字号</span>
           <input
             type="number"
@@ -174,7 +174,6 @@ export default function TextTab() {
             value={font.letterSpacing}
             min={-64}
             max={64}
-            disabled={!fontSelected}
             onChange={handleFontNumber('letterSpacing', -64, 64)}
           />
           <span className="field-label">px</span>
@@ -187,7 +186,6 @@ export default function TextTab() {
             value={font.lineSpacing}
             min={-64}
             max={64}
-            disabled={!fontSelected}
             onChange={handleFontNumber('lineSpacing', -64, 64)}
           />
           <span className="field-label">px</span>
@@ -196,7 +194,6 @@ export default function TextTab() {
           <input
             type="checkbox"
             checked={font.shadow}
-            disabled={!fontSelected}
             onChange={(e) =>
               updateConfig((c) => ({
                 ...c,
@@ -206,7 +203,7 @@ export default function TextTab() {
           />
           <span>绘制阴影</span>
         </label>
-        <label className="checkbox-row">
+        <label className={`checkbox-row ${fontSelected ? '' : 'disabled'}`}>
           <input
             type="checkbox"
             checked={font.pixelPerfect}

@@ -228,22 +228,28 @@ export function measureBitmapTextBounds(
   text: string,
   fontId: BitmapFontId,
   lineHeight: number = RPG_CONSTANTS.LINE_HEIGHT,
+  letterSpacing: number = 0,
 ): { width: number; height: number } {
   const lines = parseText(text);
   let maxW = 0;
   for (const line of lines) {
     let w = 0;
+    let hasAdvance = false;
     for (const seg of line.segments) {
       if (seg.fillKind !== undefined) {
-        w += seg.fillKind === 'half' ? RPG_CONSTANTS.HALF_WIDTH : 1;
+        w += (seg.fillKind === 'half' ? RPG_CONSTANTS.HALF_WIDTH : 1) + letterSpacing;
+        hasAdvance = true;
         continue;
       }
       for (const ch of seg.text) {
         const code = ch.codePointAt(0) || 0;
         const { isFull } = findGlyph(fontId, code);
-        w += isFull ? RPG_CONSTANTS.FULL_WIDTH : RPG_CONSTANTS.HALF_WIDTH;
+        w += (isFull ? RPG_CONSTANTS.FULL_WIDTH : RPG_CONSTANTS.HALF_WIDTH) + letterSpacing;
+        hasAdvance = true;
       }
     }
+    // 行末不保留字间距（与自定义字体的测量逻辑一致）
+    if (hasAdvance) w -= letterSpacing;
     if (w > maxW) maxW = w;
   }
   // 最后一行只需 FONT_HEIGHT（12px），不需整行 lineHeight（16px）的行间距
@@ -285,6 +291,8 @@ export interface BitmapTextRenderOptions {
   colorSource: TextColorSource | null;
   drawShadow?: boolean;
   lineHeight?: number;
+  /** 字间距（像素，可为负） */
+  letterSpacing?: number;
   fontId: BitmapFontId;
   /** 收集 \r / \p 标出的填充区域（画布坐标） */
   onFillRegion?: (region: FillRegion) => void;
@@ -308,6 +316,7 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
     colorSource,
     drawShadow = true,
     lineHeight = RPG_CONSTANTS.LINE_HEIGHT,
+    letterSpacing = 0,
     fontId,
     onFillRegion,
   } = opts;
@@ -330,7 +339,7 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
           w,
           h: RPG_CONSTANTS.FONT_HEIGHT + expandY * 2,
         });
-        curX += w;
+        curX += w + letterSpacing;
         continue;
       }
       // \c[RRGGBB] 显式颜色优先；没有 System 配色时用白色兜底
@@ -360,7 +369,7 @@ export function renderBitmapText(opts: BitmapTextRenderOptions): void {
           ctx.drawImage(shadowGlyph, curX + 1, lineY + 1);
         }
         ctx.drawImage(mainGlyph, curX, lineY);
-        curX += w;
+        curX += w + letterSpacing;
       }
     }
   }
