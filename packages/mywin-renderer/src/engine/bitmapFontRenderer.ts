@@ -196,12 +196,14 @@ function getBitmapGlyph(
           pixels[idx] = sysData[sIdx];
           pixels[idx + 1] = sysData[sIdx + 1];
           pixels[idx + 2] = sysData[sIdx + 2];
+          // 色块像素是透明色（alpha=0）时不绘制：阴影色为透明色时阴影应不可见
+          pixels[idx + 3] = sysData[sIdx + 3];
         } else {
           pixels[idx] = solidR;
           pixels[idx + 1] = solidG;
           pixels[idx + 2] = solidB;
+          pixels[idx + 3] = 255;
         }
-        pixels[idx + 3] = 255;
       }
       // 透明像素 alpha=0（已由 createImageData 初始化）
     }

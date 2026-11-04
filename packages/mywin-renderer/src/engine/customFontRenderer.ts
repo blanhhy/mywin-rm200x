@@ -387,6 +387,8 @@ function drawLayer(
         dst[idx] = block[si];
         dst[idx + 1] = block[si + 1];
         dst[idx + 2] = block[si + 2];
+        // 色块像素是透明色（alpha=0）时不绘制：阴影色为透明色时阴影应不可见
+        alpha = Math.round((alpha * block[si + 3]) / 255);
       } else {
         dst[idx] = solidR;
         dst[idx + 1] = solidG;
