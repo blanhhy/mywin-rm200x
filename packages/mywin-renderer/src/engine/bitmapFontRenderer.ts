@@ -477,11 +477,12 @@ function scanParam(
 export function parseText(text: string): ParsedLine[] {
   const lines: ParsedLine[] = [];
   const rawLines = text.split('\n');
+  // 未指定配色时用索引 0；取不到 System 配色时渲染层回退白色
+  // 颜色状态跨行保持：\c[n] 的作用域是整个消息，不只是当前行
+  let currentColor = 0;
+  let currentRGB: number | undefined;
   for (const rawLine of rawLines) {
     const segments: TextSegment[] = [];
-    // 未指定配色时用索引 0；取不到 System 配色时渲染层回退白色
-    let currentColor = 0;
-    let currentRGB: number | undefined;
     let buf = '';
     let i = 0;
     while (i < rawLine.length) {
