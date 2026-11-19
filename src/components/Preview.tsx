@@ -40,7 +40,9 @@ export default function Preview() {
   const [zoom, setZoom] = useState(2);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [exportError, setExportError] = useState(false);
-  const [colorOverflow, setColorOverflow] = useState<{ count: number } | null>(null);
+  const [colorOverflow, setColorOverflow] = useState<{ count: number; saveAs: boolean } | null>(
+    null,
+  );
   const [compareDims, setCompareDims] = useState<{ w: number; h: number } | null>(null);
   /** 目标图片（覆盖写模式的参考图），用于 \r / \p 填充 */
   const [referenceImage, setReferenceImage] = useState<HTMLImageElement | null>(null);
@@ -55,6 +57,8 @@ export default function Preview() {
     mode: 'indexed' | 'rgba';
     force: boolean;
     partialTarget?: { w: number; h: number };
+    /** 有目标图片时也走另存流程（不复用目标文件名） */
+    saveAs?: boolean;
   } | null>(null);
   const [nameInput, setNameInput] = useState('');
   const [nameExt, setNameExt] = useState<'png' | 'bmp'>('png');
@@ -164,21 +168,30 @@ export default function Preview() {
     force = false,
     partialTarget?: { w: number; h: number },
     target?: { stem: string; ext: 'png' | 'bmp' },
+    saveAs = false,
   ) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    // 有目标图片且不是另存：覆盖写模式
+    const overwrite = !!selectedPicture && !target && !saveAs;
+
     // 保存/下载（非覆盖）先让用户确认文件名与格式
-    if (!selectedPicture && !target) {
-      setPendingSave({ mode, force, partialTarget });
-      setNameInput(`mywin-${Date.now()}`);
+    if (!overwrite && !target) {
+      setPendingSave({ mode, force, partialTarget, saveAs });
+      // 另存为时用参考图名作初始名（去掉扩展名，扩展名由右侧选择）
+      setNameInput(
+        saveAs && selectedPicture
+          ? selectedPicture.fileName.replace(/\.[^.]+$/, '')
+          : `mywin-${Date.now()}`,
+      );
       setNameExt('png');
       setNameError(null);
       return;
     }
 
     // 替换模式下校验目标图片尺寸是否与当前画面完全一致
-    if (selectedPicture && workspace && !force && !partialTarget) {
+    if (overwrite && workspace && !force && !partialTarget) {
       const targetSize =
         compareDims ?? (pictureDataUrl ? await loadImageSize(pictureDataUrl) : null);
       if (targetSize && (targetSize.w !== canvas.width || targetSize.h !== canvas.height)) {
@@ -206,7 +219,7 @@ export default function Preview() {
       }
 
       // 覆盖时按目标文件的扩展名写入；另存时按用户在命名窗口中选的格式
-      const ext: 'png' | 'bmp' = selectedPicture
+      const ext: 'png' | 'bmp' = overwrite
         ? targetIsBmp
           ? 'bmp'
           : 'png'
@@ -220,10 +233,10 @@ export default function Preview() {
       } else {
         fileData = await canvasTo8bitPNG(saveCanvas, { transparentColor });
       }
-      const filename = selectedPicture ? selectedPicture.fileName : `${target!.stem}.${ext}`;
+      const filename = overwrite ? selectedPicture.fileName : `${target!.stem}.${ext}`;
       if (workspace) {
-        // 替换模式下覆盖选中的图片，否则另存为新文件
-        const savedName = selectedPicture
+        // 覆盖模式下替换选中的图片，否则另存为新文件
+        const savedName = overwrite
           ? await overwritePictureToWorkspace(selectedPicture.fileName, fileData)
           : await exportPNGToWorkspace(filename, fileData);
         if (savedName) {
@@ -239,15 +252,13 @@ export default function Preview() {
           }
           setExportError(false);
           setExportMsg(
-            selectedPicture
-              ? `已覆盖 Picture/${savedName}`
-              : `已保存到工作区 Picture/${savedName}`,
+            overwrite ? `已覆盖 Picture/${savedName}` : `已保存到工作区 Picture/${savedName}`,
           );
           // 只更新这一张的条目；重新枚举整个 Picture 目录会重读所有缩略图
           refreshPicture(savedName);
         } else {
           setExportError(true);
-          setExportMsg(selectedPicture ? '覆盖图片失败' : '导出到工作区失败');
+          setExportMsg(overwrite ? '覆盖图片失败' : '导出到工作区失败');
         }
       } else {
         downloadPNG(fileData, filename, ext === 'bmp' ? 'image/bmp' : 'image/png');
@@ -265,10 +276,21 @@ export default function Preview() {
     if (!canvasRef.current) return;
     const colorCount = countUniqueColors(canvasRef.current);
     if (colorCount > 256) {
-      setColorOverflow({ count: colorCount });
+      setColorOverflow({ count: colorCount, saveAs: false });
       return;
     }
     doSave('indexed');
+  };
+
+  /** 有目标图片时另存为新文件（不复用目标文件名） */
+  const handleSaveAs = () => {
+    if (!canvasRef.current) return;
+    const colorCount = countUniqueColors(canvasRef.current);
+    if (colorCount > 256) {
+      setColorOverflow({ count: colorCount, saveAs: true });
+      return;
+    }
+    doSave('indexed', false, undefined, undefined, true);
   };
 
   // 命名窗口确认：校验文件名，工作区已有同名文件时拒绝保存
@@ -304,10 +326,13 @@ export default function Preview() {
     const request = pendingSave;
     setPendingSave(null);
     setNameError(null);
-    await doSave(request.mode, request.force, request.partialTarget, {
-      stem,
-      ext: nameExt,
-    });
+    await doSave(
+      request.mode,
+      request.force,
+      request.partialTarget,
+      { stem, ext: nameExt },
+      request.saveAs,
+    );
   };
 
   return (
@@ -399,9 +424,16 @@ export default function Preview() {
           />
           预览
         </label>
-        <button className="export-btn" onClick={handleExport}>
-          {selectedPicture ? '覆盖' : workspace ? '保存' : '下载'}
-        </button>
+        <div className="export-actions">
+          <button className="export-btn" onClick={handleExport}>
+            {workspace ? '保存' : '下载'}
+          </button>
+          {selectedPicture && workspace && (
+            <button className="export-btn" onClick={handleSaveAs}>
+              另存为
+            </button>
+          )}
+        </div>
       </div>
       {exportMsg && <div className={`export-msg ${exportError ? 'error' : ''}`}>{exportMsg}</div>}
 
@@ -452,8 +484,9 @@ export default function Preview() {
             <button
               className="modal-btn"
               onClick={() => {
+                const saveAs = colorOverflow?.saveAs ?? false;
                 setColorOverflow(null);
-                doSave('indexed');
+                doSave('indexed', false, undefined, undefined, saveAs);
               }}
             >
               压缩色彩并保存
@@ -462,8 +495,9 @@ export default function Preview() {
               <button
                 className="modal-btn"
                 onClick={() => {
+                  const saveAs = colorOverflow?.saveAs ?? false;
                   setColorOverflow(null);
-                  doSave('rgba');
+                  doSave('rgba', false, undefined, undefined, saveAs);
                 }}
               >
                 扩展色彩并保存

@@ -702,6 +702,18 @@
   background: #3d6aa3;
 }
 
+/* 导出按钮组（另存为 + 保存） */
+.export-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-actions .export-btn {
+  margin-left: 0;
+}
+
 /* === 保存/下载命名窗口 === */
 .filename-row {
   display: flex;
