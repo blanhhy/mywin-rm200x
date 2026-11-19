@@ -12,6 +12,7 @@
 
 import { RPG_CONSTANTS, DEFAULT_TEXT_RGB, type CustomFontConfig } from '../types/index.js';
 import { parseText, type FillRegion, type TextColorSource } from './bitmapFontRenderer.js';
+import { isExFontCode, getExFontGlyphData } from './exfont.js';
 
 /** 解析出的行类型（复用 bitmapFontRenderer 的解析结果，不额外导出内部类型） */
 type ParsedLine = ReturnType<typeof parseText>[number];
@@ -225,8 +226,11 @@ function layoutLine(
     }
     const paint = resolveSegmentPaint(seg, geo, colorSource);
     for (const ch of seg.text) {
+      // ExFont 图标与字体无关，按字号（正方形）占位；
+      // 交给字体本身绘制会被当成缺失字形显示成方框
+      const isIcon = isExFontCode(ch.codePointAt(0) ?? 0);
       // 逐字符累加小数位置、落地时取整，保证间距均匀且不出现半像素
-      const advance = ctx.measureText(ch).width;
+      const advance = isIcon ? geo.size : ctx.measureText(ch).width;
       glyphs.push({
         ch,
         x: Math.round(penX),
@@ -268,7 +272,12 @@ function coverageOf(
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#ffffff';
-  for (const g of glyphs) ctx.fillText(g.ch, g.x * ss, geo.ascent * ss);
+  for (const g of glyphs) {
+    // ExFont 图标不经过字体：直接用 1-bit 掩码按字号缩放绘制
+    const code = g.ch.codePointAt(0) ?? 0;
+    if (isExFontCode(code) && drawExFontGlyph(ctx, code, g.x * ss, geo, ss)) continue;
+    ctx.fillText(g.ch, g.x * ss, geo.ascent * ss);
+  }
   const src = ctx.getImageData(0, 0, cv.width, cv.height).data;
   const cov = new Uint8ClampedArray(wSrc * hSrc);
 
@@ -290,6 +299,45 @@ function coverageOf(
     }
   }
   return { cov, ss };
+}
+
+/**
+ * 把一个 ExFont 图标按字号缩放画进覆盖率画布
+ *
+ * 图标为 12×12 的 1-bit 掩码，这里按字号（正方形）最近邻放大，
+ * 底边贴基线（与内置位图字体同一行内的高度一致）。
+ *
+ * @returns false 表示 exfont 未加载，调用方回退到字体自身的绘制
+ */
+function drawExFontGlyph(
+  ctx: CanvasRenderingContext2D,
+  code: number,
+  xHi: number,
+  geo: FontGeometry,
+  ss: number,
+): boolean {
+  const data = getExFontGlyphData(code);
+  if (!data) return false;
+
+  const iconSize = Math.max(1, Math.round(geo.size));
+  const left = xHi;
+  const top = (geo.ascent - iconSize) * ss;
+  const span = iconSize * ss;
+  const scaleCoord = (v: number) => Math.round((v * span) / RPG_CONSTANTS.FULL_WIDTH);
+
+  for (let y = 0; y < RPG_CONSTANTS.FONT_HEIGHT; y++) {
+    const row = data[y] || 0;
+    if (row === 0) continue;
+    const y0 = top + scaleCoord(y);
+    const h = Math.max(1, top + scaleCoord(y + 1) - y0);
+    for (let x = 0; x < RPG_CONSTANTS.FULL_WIDTH; x++) {
+      if ((row & (1 << x)) === 0) continue;
+      const x0 = left + scaleCoord(x);
+      const w = Math.max(1, left + scaleCoord(x + 1) - x0);
+      ctx.fillRect(x0, y0, w, h);
+    }
+  }
+  return true;
 }
 
 /** 读取 System 图里一个 16×16 色块的像素 */
